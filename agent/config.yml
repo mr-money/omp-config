@@ -1,0 +1,21 @@
+shellPath: <YOUR_SHELL_PATH>  # e.g. D:\PowerShell\7\pwsh.exe
+providers: 
+  webSearchOrder: 
+    []
+setupVersion: 1
+modelRoles: 
+  plan: volcengine-coding/glm-5.2:high
+  slow: volcengine-coding/doubao-seed-2.1-turbo:high
+  advisor: volcengine-coding/doubao-seed-2.1-turbo:medium
+  commit: volcengine-coding/doubao-seed-2.1-turbo:off
+  smol: volcengine-coding/glm-5.2:max
+  default: volcengine-coding/deepseek-v4-flash-ga-260731
+  tiny: volcengine-coding/doubao-seed-2.1-turbo:off
+  vision: volcengine-coding/doubao-seed-2.1-turbo:medium
+defaultThinkingLevel: auto
+memory: 
+  backend: mnemopi
+mnemopi: 
+  scoping: per-project-tagged
+  embeddingVariant: multilingual
+hideThinkingBlock: true

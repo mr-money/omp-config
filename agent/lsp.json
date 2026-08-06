@@ -1,0 +1,15 @@
+{
+  "servers": {
+    "gopls": {
+      "command": "<GOBIN_PATH>/gopls.exe",  // 替换为本机 gopls 路径，如 D:/Go1.23/bin/gopls.exe
+      "fileTypes": [".go"],
+      "rootMarkers": ["."]
+    },
+    "pylsp": {
+      "command": "<PYTHON_PATH>/python.exe",
+      "args": ["-m", "pylsp"],
+      "fileTypes": [".py"],
+      "rootMarkers": ["."]
+    }
+  }
+}
