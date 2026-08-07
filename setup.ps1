@@ -15,6 +15,12 @@ function Write-OK   { param($msg) Write-Host "    OK  $msg" -ForegroundColor Gre
 function Write-Warn { param($msg) Write-Host "    WARN $msg" -ForegroundColor Yellow }
 function Write-Fail { param($msg) Write-Host "    FAIL $msg" -ForegroundColor Red }
 
+# 写 UTF-8 无 BOM（PS5.1 的 Set-Content 默认用 Default 编码，会损坏中文/换行）
+function Write-Utf8Text {
+    param([string]$Path, [string]$Content)
+    [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
+}
+
 # 1. 前置校验
 Write-Step "校验前置依赖"
 
@@ -83,58 +89,71 @@ if ($pwsh) {
 }
 
 if ($shellPath -and (Test-Path $configYml)) {
-    $yml = Get-Content $configYml -Raw
-    if ($yml -match '(?m)^shellPath:') {
-        $yml = $yml -replace '(?m)^shellPath:.*$', "shellPath: $shellPath"
+    $yml = [System.IO.File]::ReadAllText($configYml)
+    $eol = if ($yml -match "\r\n") { "`r`n" } else { "`n" }
+    if ($yml -match '(?m)^shellPath:.*$') {
+        $yml = [regex]::Replace($yml, '(?m)^shellPath:.*$', "shellPath: $shellPath")
         Write-OK "已更新 config.yml shellPath: $shellPath"
     } else {
-        $yml = "shellPath: $shellPath`n" + $yml
+        $yml = "shellPath: $shellPath$eol" + $yml
         Write-OK "已追加 config.yml shellPath: $shellPath"
     }
-    Set-Content -Path $configYml -Value $yml -NoNewline
+    Write-Utf8Text $configYml $yml
 } elseif (-not $shellPath) {
     Write-Warn "未检测到 pwsh，config.yml 不设 shellPath（omp 回退到 cmd.exe）"
 }
 
-# 5. 探测 LSP 路径，写绝对路径到 lsp.json（不在 PATH 才写）
+# 5. 探测 LSP 路径，正则替换 lsp.json 中 command 值（保留原格式，不重序列化）
 Write-Step "探测 LSP 工具"
 $lspJson = Join-Path $AgentDir "lsp.json"
 if (Test-Path $lspJson) {
-    $lsp = Get-Content $lspJson -Raw | ConvertFrom-Json
+    $raw = [System.IO.File]::ReadAllText($lspJson)
+    $changed = $false
 
     $goplsCmd = Get-Command gopls -ErrorAction SilentlyContinue
-    if ($goplsCmd -and $goplsCmd.Source -ne "gopls" -and $lsp.servers.gopls) {
-        $lsp.servers.gopls.command = $goplsCmd.Source
-        Write-OK "gopls: $($goplsCmd.Source)"
-    } elseif ($lsp.servers.gopls) {
+    if ($goplsCmd -and $goplsCmd.Source -and $goplsCmd.Source -ne "gopls") {
+        # JSON 字符串转义：\ -> \\（不是正则转义）
+        $jsonPath = $goplsCmd.Source.Replace('\', '\\')
+        if ($raw -match '"command":\s*"gopls"') {
+            $raw = [regex]::Replace($raw, '("command":\s*)"gopls"', "`${1}`"$jsonPath`"")
+            Write-OK "gopls: $($goplsCmd.Source)"
+            $changed = $true
+        }
+    } else {
         Write-Warn "gopls 未在 PATH，保留裸名 'gopls'"
     }
 
     $pyCmd = Get-Command python -ErrorAction SilentlyContinue
-    if ($pyCmd -and $pyCmd.Source -ne "python" -and $lsp.servers.pylsp) {
-        $lsp.servers.pylsp.command = $pyCmd.Source
-        Write-OK "python: $($pyCmd.Source)"
-    } elseif ($lsp.servers.pylsp) {
+    if ($pyCmd -and $pyCmd.Source -and $pyCmd.Source -ne "python") {
+        $jsonPath = $pyCmd.Source.Replace('\', '\\')
+        if ($raw -match '"command":\s*"python"') {
+            $raw = [regex]::Replace($raw, '("command":\s*)"python"', "`${1}`"$jsonPath`"")
+            Write-OK "python: $($pyCmd.Source)"
+            $changed = $true
+        }
+    } else {
         Write-Warn "python 未在 PATH，保留裸名 'python'"
     }
 
-    $lsp | ConvertTo-Json -Depth 5 | Set-Content $lspJson
+    if ($changed) {
+        Write-Utf8Text $lspJson $raw
+    }
 }
 
 # 6. API Key 填入（环境变量 OMP_API_KEY 优先，否则交互输入）
 Write-Step "配置 API Key"
 $modelsYml = Join-Path $AgentDir "models.yml"
 if (Test-Path $modelsYml) {
-    $yml = Get-Content $modelsYml -Raw
+    $yml = [System.IO.File]::ReadAllText($modelsYml)
     if ($yml -match 'apiKey:\s*<YOUR_API_KEY>') {
         $plain = $null
         if (-not [string]::IsNullOrWhiteSpace($env:OMP_API_KEY)) {
-            $plain = $env:OMP_API_KEY
+            $plain = $env:OMP_API_KEY.Trim()
             Write-OK "从环境变量 OMP_API_KEY 读取"
         } elseif ([Environment]::UserInteractive) {
             $secure = Read-Host "输入火山方舟 API Key" -AsSecureString
             $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-            $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+            $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr).Trim()
             [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
         } else {
             Write-Warn "非交互环境且 OMP_API_KEY 未设置，保留占位符"
@@ -143,8 +162,10 @@ if (Test-Path $modelsYml) {
         if ([string]::IsNullOrWhiteSpace($plain)) {
             Write-Warn "API Key 为空，保留占位符"
         } else {
-            $yml = $yml -replace 'apiKey:\s*<YOUR_API_KEY>', "apiKey: $plain"
-            Set-Content -Path $modelsYml -Value $yml -NoNewline
+            # 用 MatchEvaluator 委托插入字面 key（避免 $ 在替换模板中被当回引用）
+            $yml = [regex]::Replace($yml, 'apiKey:\s*<YOUR_API_KEY>',
+                { param($m) "apiKey: $plain" })
+            Write-Utf8Text $modelsYml $yml
             Write-OK "已写入 models.yml apiKey"
         }
     } else {
