@@ -1,12 +1,12 @@
 {
   "servers": {
     "gopls": {
-      "command": "E:/gopath/bin/gopls.exe",
+      "command": "gopls",
       "fileTypes": [".go"],
       "rootMarkers": ["."]
     },
     "pylsp": {
-      "command": "D:/Python313/python.exe",
+      "command": "python",
       "args": ["-m", "pylsp"],
       "fileTypes": [".py"],
       "rootMarkers": ["."]

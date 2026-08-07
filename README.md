@@ -7,23 +7,15 @@
 ```
 omp-config/
 ├── agent/                    # → ~/.omp/agent/
-│   ├── config.yml            # 全局配置（modelRoles, memory, TUI）
-│   ├── models.yml            # 模型提供商 → 需填入 API Key
-│   ├── lsp.json              # LSP 服务器 → 需修改路径
+│   ├── config.yml            # 全局配置（modelRoles, memory, TUI；shellPath 由 setup 探测）
+│   ├── models.yml            # 模型提供商 → setup 交互填入 API Key
+│   ├── lsp.json              # LSP 服务器（默认 PATH 裸名，setup 探测覆盖）
 │   ├── cost.json             # 费用配置（人民币计价）
-│   └── settings.json         # 持久化设置 → 需修改路径
+│   └── settings.json         # 持久化设置
 ├── scripts/                  # → ~/.omp/
 │   └── omp-cny-patch.mjs     # 状态栏人民币计价补丁
 ├── skills/                   # → ~/.omp/agent/skills/
-│   ├── caveman/              # 极简沟通模式（源自 juliusbrussee/caveman）
-│   ├── domain-modeling/      # 领域建模 + ADR/术语表
-│   ├── grill-with-docs/      # 追问 + 写文档
-│   ├── grilling/             # 追问增强
-│   ├── grill-me/             # 追问基础
-│   ├── docx/                 # Word 文档操作
-│   ├── pptx/                 # PPT 演示文稿
-│   ├── xlsx/                 # Excel 表格操作
-│   └── pdf/                  # PDF 文档操作
+├── setup.ps1                 # 一键部署脚本（Windows / PowerShell）
 └── README.md
 ```
 
@@ -35,41 +27,33 @@ omp-config/
 - 已安装 `bun`
 - 已安装语言服务器（gopls、pylsp 等）
 
-### 步骤
+### 步骤（一键部署）
 
 ```powershell
 # 1. 克隆仓库
 cd ~
 git clone git@github.com:mr-money/omp-config.git
 
-# 2. 部署配置文件
-cp ~/omp-config/agent/config.yml    ~/.omp/agent/
-cp ~/omp-config/agent/models.yml    ~/.omp/agent/
-cp ~/omp-config/agent/lsp.json      ~/.omp/agent/
-cp ~/omp-config/agent/cost.json     ~/.omp/agent/
-cp ~/omp-config/agent/settings.json ~/.omp/agent/
-
-# 3. 部署补丁脚本
-cp ~/omp-config/scripts/omp-cny-patch.mjs ~/.omp/
-
-# 4. 部署技能
-cp -r ~/omp-config/skills/* ~/.omp/agent/skills/
-
-# 5. 安装插件
-omp plugin install pi-cny-cost
-
-# 6. 激活补丁
-bun ~/.omp/omp-cny-patch.mjs --setup
+# 2. 一键部署（复制配置 + 探测路径 + 填 API Key + 激活补丁）
+cd omp-config
+.\setup.ps1
 ```
 
-### 必须修改的配置
+脚本流程（自动执行，无需手动抄步骤）：
+1. 校验 bun / omp 已安装
+2. 复制 `agent/` → `~/.omp/agent/`、`skills/` → `~/.omp/agent/skills/`、`scripts/omp-cny-patch.mjs` → `~/.omp/`
+3. 探测本机 pwsh / gopls / python 路径，写回对应配置
+4. 若 `models.yml` 仍是 `<YOUR_API_KEY>` 占位，交互提示输入
+5. 执行 `bun ~/.omp/omp-cny-patch.mjs --setup` 激活人民币计价补丁
 
-| 文件 | 字段 | 说明 |
-|------|------|------|
-| `~/.omp/agent/models.yml` | `apiKey` | 替换为你的火山引擎 API Key |
-| `~/.omp/agent/lsp.json` | `command` | 改为本机 gopls/pylsp 实际路径 |
-| `~/.omp/agent/config.yml` | `shellPath` | 改为本机 Shell 路径，如 `D:\PowerShell\7\pwsh.exe` |
-| `~/.omp/agent/settings.json` | `shellPath` | 同上 |
+### 配置项一览
+
+| 文件 | 字段 | 部署方式 | 说明 |
+|------|------|----------|------|
+| `~/.omp/agent/models.yml` | `apiKey` | setup 交互填入 / `OMP_API_KEY` 环境变量 | 火山引擎 API Key；优先读环境变量，否则交互提示；已填则跳过 |
+| `~/.omp/agent/lsp.json` | `servers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`gopls` / `python -m pylsp`）；探测到绝对路径则写回 |
+| `~/.omp/agent/config.yml` | `shellPath` | setup 探测写入 | 检测到 pwsh 则自动写入；未检测到则省略（omp 回退到 cmd.exe） |
+| `~/.omp/agent/settings.json` | — | 直接复制 | 不再单独设 shellPath，统一走 config.yml |
 
 ### 验证
 
@@ -118,12 +102,9 @@ cat ~/.omp/logs/omp-cny-patch.log
 ## 更新
 
 ```powershell
-# 拉取最新配置
+# 拉取最新配置 + 重新部署（幂等）
 cd ~/omp-config && git pull
-# 重新部署
-cp ~/omp-config/agent/*.yml ~/.omp/agent/
-cp ~/omp-config/agent/*.json ~/.omp/agent/
-cp ~/omp-config/scripts/omp-cny-patch.mjs ~/.omp/
-cp -r ~/omp-config/skills/* ~/.omp/agent/skills/
-# 重新激活补丁（刷新 ~/.omp 自安装副本与包装器，包装器按绝对路径调用该副本）
-bun ~/.omp/omp-cny-patch.mjs --setup
+.\setup.ps1
+```
+
+`setup.ps1` 幂等：重复运行覆盖最新配置、保留已填 API Key、patch 已应用则 no-op。

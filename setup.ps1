@@ -1,0 +1,173 @@
+# omp-config 一键部署脚本 (Windows / PowerShell 5.1+)
+# 用法：仓库根目录运行 .\setup.ps1
+# 前置：已安装 bun；已安装 omp (`bun install -g @oh-my-pi/pi-coding-agent`)
+# 行为：探测本机路径 -> 复制配置 -> 填 API Key -> 跑 patch --setup
+
+$ErrorActionPreference = "Stop"
+
+$RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$OmpHome = Join-Path $env:USERPROFILE ".omp"
+$AgentDir = Join-Path $OmpHome "agent"
+$PatchScript = Join-Path $OmpHome "omp-cny-patch.mjs"
+
+function Write-Step { param($msg) Write-Host "==> $msg" -ForegroundColor Cyan }
+function Write-OK   { param($msg) Write-Host "    OK  $msg" -ForegroundColor Green }
+function Write-Warn { param($msg) Write-Host "    WARN $msg" -ForegroundColor Yellow }
+function Write-Fail { param($msg) Write-Host "    FAIL $msg" -ForegroundColor Red }
+
+# 1. 前置校验
+Write-Step "校验前置依赖"
+
+$bun = Get-Command bun -ErrorAction SilentlyContinue
+if (-not $bun) {
+    Write-Fail "未找到 bun。请先安装：irm bun.sh/install.ps1 | iex"
+    exit 1
+}
+Write-OK "bun $(& bun --version) @ $($bun.Source)"
+
+# 检查 omp bundle（可能在 BUN_INSTALL 或默认 ~/.bun）
+$bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $env:USERPROFILE ".bun" }
+$bundle = Join-Path $bunInstall "install\global\node_modules\@oh-my-pi\pi-coding-agent\dist\cli.js"
+if (-not (Test-Path $bundle)) {
+    Write-Fail "未找到 omp bundle: $bundle"
+    Write-Fail "请先运行: bun install -g @oh-my-pi/pi-coding-agent"
+    exit 1
+}
+Write-OK "omp bundle: $bundle"
+
+# 2. 确保目录存在
+New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $AgentDir "skills") | Out-Null
+
+# 3. 复制配置文件
+Write-Step "复制 agent 配置"
+$srcModels = Join-Path $RepoRoot "agent\models.yml"
+$dstModels = Join-Path $AgentDir "models.yml"
+# 若目标 models.yml 已有真实 apiKey（非占位），跳过覆盖以保留
+$skipModels = $false
+if ((Test-Path $dstModels) -and (Test-Path $srcModels)) {
+    $dstContent = Get-Content $dstModels -Raw
+    if ($dstContent -notmatch 'apiKey:\s*<YOUR_API_KEY>') {
+        $skipModels = $true
+        Write-OK "models.yml 已有 apiKey，跳过覆盖（保留现有配置）"
+    }
+}
+
+# 复制除 models.yml 外的所有 agent 文件
+Get-ChildItem (Join-Path $RepoRoot "agent") -Exclude "models.yml" | ForEach-Object {
+    Copy-Item -Force -Recurse $_.FullName -Destination $AgentDir
+}
+if (-not $skipModels) {
+    Copy-Item -Force $srcModels -Destination $dstModels
+}
+Write-OK "agent/ -> ~/.omp/agent/"
+
+Write-Step "复制 patch 脚本"
+Copy-Item -Force (Join-Path $RepoRoot "scripts\omp-cny-patch.mjs") -Destination $PatchScript
+Write-OK "scripts/omp-cny-patch.mjs -> ~/.omp/omp-cny-patch.mjs"
+
+Write-Step "复制 skills"
+$skillsSrc = Join-Path $RepoRoot "skills"
+if (Test-Path $skillsSrc) {
+    Copy-Item -Force -Recurse (Join-Path $skillsSrc "*") -Destination (Join-Path $AgentDir "skills")
+    Write-OK "skills/ -> ~/.omp/agent/skills/"
+}
+
+# 4. 探测 shell 路径（pwsh 优先），写回 config.yml
+Write-Step "探测 shell 路径"
+$configYml = Join-Path $AgentDir "config.yml"
+$shellPath = $null
+$pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
+if ($pwsh) {
+    $shellPath = $pwsh.Source
+}
+
+if ($shellPath -and (Test-Path $configYml)) {
+    $yml = Get-Content $configYml -Raw
+    if ($yml -match '(?m)^shellPath:') {
+        $yml = $yml -replace '(?m)^shellPath:.*$', "shellPath: $shellPath"
+        Write-OK "已更新 config.yml shellPath: $shellPath"
+    } else {
+        $yml = "shellPath: $shellPath`n" + $yml
+        Write-OK "已追加 config.yml shellPath: $shellPath"
+    }
+    Set-Content -Path $configYml -Value $yml -NoNewline
+} elseif (-not $shellPath) {
+    Write-Warn "未检测到 pwsh，config.yml 不设 shellPath（omp 回退到 cmd.exe）"
+}
+
+# 5. 探测 LSP 路径，写绝对路径到 lsp.json（不在 PATH 才写）
+Write-Step "探测 LSP 工具"
+$lspJson = Join-Path $AgentDir "lsp.json"
+if (Test-Path $lspJson) {
+    $lsp = Get-Content $lspJson -Raw | ConvertFrom-Json
+
+    $goplsCmd = Get-Command gopls -ErrorAction SilentlyContinue
+    if ($goplsCmd -and $goplsCmd.Source -ne "gopls" -and $lsp.servers.gopls) {
+        $lsp.servers.gopls.command = $goplsCmd.Source
+        Write-OK "gopls: $($goplsCmd.Source)"
+    } elseif ($lsp.servers.gopls) {
+        Write-Warn "gopls 未在 PATH，保留裸名 'gopls'"
+    }
+
+    $pyCmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($pyCmd -and $pyCmd.Source -ne "python" -and $lsp.servers.pylsp) {
+        $lsp.servers.pylsp.command = $pyCmd.Source
+        Write-OK "python: $($pyCmd.Source)"
+    } elseif ($lsp.servers.pylsp) {
+        Write-Warn "python 未在 PATH，保留裸名 'python'"
+    }
+
+    $lsp | ConvertTo-Json -Depth 5 | Set-Content $lspJson
+}
+
+# 6. API Key 填入（环境变量 OMP_API_KEY 优先，否则交互输入）
+Write-Step "配置 API Key"
+$modelsYml = Join-Path $AgentDir "models.yml"
+if (Test-Path $modelsYml) {
+    $yml = Get-Content $modelsYml -Raw
+    if ($yml -match 'apiKey:\s*<YOUR_API_KEY>') {
+        $plain = $null
+        if (-not [string]::IsNullOrWhiteSpace($env:OMP_API_KEY)) {
+            $plain = $env:OMP_API_KEY
+            Write-OK "从环境变量 OMP_API_KEY 读取"
+        } elseif ([Environment]::UserInteractive) {
+            $secure = Read-Host "输入火山方舟 API Key" -AsSecureString
+            $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+            $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr)
+            [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+        } else {
+            Write-Warn "非交互环境且 OMP_API_KEY 未设置，保留占位符"
+        }
+
+        if ([string]::IsNullOrWhiteSpace($plain)) {
+            Write-Warn "API Key 为空，保留占位符"
+        } else {
+            $yml = $yml -replace 'apiKey:\s*<YOUR_API_KEY>', "apiKey: $plain"
+            Set-Content -Path $modelsYml -Value $yml -NoNewline
+            Write-OK "已写入 models.yml apiKey"
+        }
+    } else {
+        Write-OK "models.yml apiKey 已配置，跳过"
+    }
+}
+
+# 7. 跑 patch --setup
+Write-Step "执行 omp 人民币化 patch --setup"
+& bun $PatchScript --setup
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "patch --setup 失败，退出码 $LASTEXITCODE"
+    exit 1
+}
+Write-OK "patch --setup 完成"
+
+# 8. 摘要
+Write-Step "部署完成"
+Write-Host ""
+Write-Host "  omp 配置目录: $AgentDir"
+Write-Host "  patch 脚本:   $PatchScript"
+Write-Host "  omp bundle:   $bundle"
+Write-Host ""
+Write-Host "  启动: omp"
+Write-Host "  回滚: bun $PatchScript --restore"
+Write-Host ""
