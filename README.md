@@ -103,6 +103,8 @@ cat ~/.omp/logs/omp-cny-patch.log
 - 在 `dist/cli.js` 中定位 `id:"cost"` 状态段
 - 注入 CNY 计算函数，读取 `cost.json` 获取价格配置
 - 用 `omp.cmd` 包装器替代原始入口，每次启动先跑补丁
+- 移除 bun 生成的 `omp.exe` shim（PATHEXT 中 `.EXE` 优先于 `.CMD`，会遮蔽包装器）；若 shim 正被运行中的 omp 进程锁定（bun 安装的 omp 常见），无法删除时自动重命名为 `omp.exe.disabled`，下次运行时清扫残留
+- 回滚：`bun ~/.omp/omp-cny-patch.mjs --restore`（还原原始 `cli.js`、删除包装器、清理 `.disabled` 残留，之后重新 `bun install -g @oh-my-pi/pi-coding-agent` 重建 shim）
 
 ### 技能
 
@@ -120,3 +122,5 @@ cp ~/omp-config/agent/*.yml ~/.omp/agent/
 cp ~/omp-config/agent/*.json ~/.omp/agent/
 cp ~/omp-config/scripts/omp-cny-patch.mjs ~/.omp/
 cp -r ~/omp-config/skills/* ~/.omp/agent/skills/
+# 重新激活补丁（刷新 ~/.omp 自安装副本与包装器，包装器按绝对路径调用该副本）
+bun ~/.omp/omp-cny-patch.mjs --setup
