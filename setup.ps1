@@ -52,7 +52,7 @@ $dstModels = Join-Path $AgentDir "models.yml"
 # 若目标 models.yml 已有真实 apiKey（非占位），跳过覆盖以保留
 $skipModels = $false
 if ((Test-Path $dstModels) -and (Test-Path $srcModels)) {
-    $dstContent = Get-Content $dstModels -Raw
+    $dstContent = [System.IO.File]::ReadAllText($dstModels)
     if ($dstContent -notmatch 'apiKey:\s*<YOUR_API_KEY>') {
         $skipModels = $true
         Write-OK "models.yml 已有 apiKey，跳过覆盖（保留现有配置）"
@@ -92,7 +92,9 @@ if ($shellPath -and (Test-Path $configYml)) {
     $yml = [System.IO.File]::ReadAllText($configYml)
     $eol = if ($yml -match "\r\n") { "`r`n" } else { "`n" }
     if ($yml -match '(?m)^shellPath:.*$') {
-        $yml = [regex]::Replace($yml, '(?m)^shellPath:.*$', "shellPath: $shellPath")
+        # MatchEvaluator 插入字面值（防路径含 $ 被当回引用）
+        $sp = $shellPath
+        $yml = [regex]::Replace($yml, '(?m)^shellPath:.*$', { param($m) "shellPath: $sp" })
         Write-OK "已更新 config.yml shellPath: $shellPath"
     } else {
         $yml = "shellPath: $shellPath$eol" + $yml
@@ -112,10 +114,10 @@ if (Test-Path $lspJson) {
 
     $goplsCmd = Get-Command gopls -ErrorAction SilentlyContinue
     if ($goplsCmd -and $goplsCmd.Source -and $goplsCmd.Source -ne "gopls") {
-        # JSON 字符串转义：\ -> \\（不是正则转义）
-        $jsonPath = $goplsCmd.Source.Replace('\', '\\')
+        # JSON 字符串转义 \ -> \\；MatchEvaluator 插入字面值防 $ 回引用
+        $jp = $goplsCmd.Source.Replace('\', '\\')
         if ($raw -match '"command":\s*"gopls"') {
-            $raw = [regex]::Replace($raw, '("command":\s*)"gopls"', "`${1}`"$jsonPath`"")
+            $raw = [regex]::Replace($raw, '("command":\s*)"gopls"', { param($m) "$($m.Groups[1].Value)`"$jp`"" })
             Write-OK "gopls: $($goplsCmd.Source)"
             $changed = $true
         }
@@ -125,9 +127,9 @@ if (Test-Path $lspJson) {
 
     $pyCmd = Get-Command python -ErrorAction SilentlyContinue
     if ($pyCmd -and $pyCmd.Source -and $pyCmd.Source -ne "python") {
-        $jsonPath = $pyCmd.Source.Replace('\', '\\')
+        $jp = $pyCmd.Source.Replace('\', '\\')
         if ($raw -match '"command":\s*"python"') {
-            $raw = [regex]::Replace($raw, '("command":\s*)"python"', "`${1}`"$jsonPath`"")
+            $raw = [regex]::Replace($raw, '("command":\s*)"python"', { param($m) "$($m.Groups[1].Value)`"$jp`"" })
             Write-OK "python: $($pyCmd.Source)"
             $changed = $true
         }
