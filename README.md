@@ -24,7 +24,7 @@ omp-config/
 ### 前置条件
 
 - 已安装 `omp`（`bun install -g @oh-my-pi/pi-coding-agent`）
-- 已安装 `bun`
+- 已安装 `bun`（要求 `>=1.3.13`；patch 脚本会校验，bun 过低会拒绝并提示升级）
 - 已安装语言服务器（gopls、pylsp 等）
 
 ### 步骤（一键部署）
@@ -88,6 +88,7 @@ cat ~/.omp/logs/omp-cny-patch.log
 - 在 `dist/cli.js` 中定位 `id:"cost"` 状态段
 - 注入 CNY 计算函数，读取 `cost.json` 获取价格配置
 - 用 `omp.cmd` 包装器替代原始入口，每次启动先跑补丁
+- **bun 版本校验**：禁用 omp 的 bun 版本下限检查前，先校验实际 bun `>=1.3.13`。若过旧则拒绝打补丁（保留 omp 自身检查，让其干净拒绝），避免太老 bun 强制启动 omp 崩溃。升级 bun 后重跑 `--setup` 即可
 - 移除 bun 生成的 `omp.exe` shim（PATHEXT 中 `.EXE` 优先于 `.CMD`，会遮蔽包装器）；若 shim 正被运行中的 omp 进程锁定（bun 安装的 omp 常见），无法删除时自动重命名为 `omp.exe.disabled`，下次运行时清扫残留
 - 回滚：`bun ~/.omp/omp-cny-patch.mjs --restore`（还原原始 `cli.js`、删除包装器、清理 `.disabled` 残留，之后重新 `bun install -g @oh-my-pi/pi-coding-agent` 重建 shim）
 

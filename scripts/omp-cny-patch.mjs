@@ -6,9 +6,11 @@
  * below): bun 1.3.14 — the version omp pins as its floor — carries a known
  * segfault regression (type confusion when a top-level `await` resumes under an
  * active AsyncLocalStorage/OpenTelemetry context; fixed on bun main, no stable
- * release yet). omp refuses to start on the clean 1.3.13, so the floor check is
- * disabled and the machine is expected to run bun 1.3.13 until a fixed stable
- * bun ships. `--restore` puts the pristine bundle back and re-enables the check.
+ * release yet). To let the clean 1.3.13 run, the floor check is replaced with
+ * `!1` — but only after verifying the actual bun is >= MIN_BUN_VERSION
+ * (1.3.13). If the installed bun is older, the check is left intact so omp's
+ * own floor rejects it cleanly instead of crashing.
+ * `--restore` puts the pristine bundle back and re-enables the check.
  *
  * Version-agnostic: locates the `id:"cost"` status segment structurally
  * (not by exact minified string), so it keeps working after pi-coding-agent
@@ -146,8 +148,37 @@ function findCostSegment(src) {
  * omp keeps its own floor.
  */
 const VERSION_CHECK_RE = /Bun\.semver\.order\(Bun\.version,[A-Za-z_$][\w$]*\)<0/;
+const MIN_BUN_VERSION = "1.3.13"; // omp's floor pins >=1.3.14 (segfault-prone) — see header; 1.3.13 is the clean target
 function hasVersionCheckBypass(src) {
 	return !VERSION_CHECK_RE.test(src);
+}
+
+/** Parse a semver-ish version string to a comparable tuple. */
+function versionTuple(v) {
+	const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || "").trim());
+	if (!m) return null;
+	return [Number(m[1]), Number(m[2]), Number(m[3])];
+}
+
+/** Compare version tuples; returns <0, 0, >0. */
+function compareVersions(a, b) {
+	for (let i = 0; i < 3; i++) {
+		if (a[i] !== b[i]) return a[i] - b[i];
+	}
+	return 0;
+}
+
+/** Resolve the actual bun version via the resolved bun.exe. */
+function getBunVersion() {
+	const bun = resolveBunExe();
+	let v = null;
+	try {
+		v = execFileSync(bun, ["--version"], { encoding: "utf8" }).trim();
+	} catch (e) {
+		log(`WARN: cannot read bun version from ${bun} (${e.code || e.message})`);
+		return null;
+	}
+	return versionTuple(v);
 }
 
 function patchBundle() {
@@ -211,11 +242,22 @@ function patchBundle() {
 	}
 
 	let out = src.slice(0, i0) + s + src.slice(i1);
-	// bun-version floor check bypass — see VERSION_CHECK_RE note. Non-fatal: the
-	// CNY patch is the critical part; a drifted check just keeps omp's own floor.
+	// bun-version floor check bypass — see VERSION_CHECK_RE note. Before
+	// disabling omp's floor check we verify the actual bun runtime is at least
+	// MIN_BUN_VERSION. If it's older, we refuse to disable the check (leaving
+	// omp's own floor intact so it rejects a too-old bun instead of crashing)
+	// and abort. Non-fatal for the CNY patch itself on acceptable versions.
 	if (VERSION_CHECK_RE.test(out)) {
+		const bunVer = getBunVersion();
+		const min = versionTuple(MIN_BUN_VERSION);
+		if (bunVer && compareVersions(bunVer, min) < 0) {
+			// Abort BEFORE setupWrapper (which would delete the bun shim) and
+			// before writing the bundle, so omp's own floor check stays intact
+			// and rejects the too-old bun cleanly instead of crashing.
+			fail(`bun ${bunVer.join(".")} is older than ${MIN_BUN_VERSION} — omp requires >=1.3.14. Upgrade bun (irm bun.sh/install.ps1 | iex) then re-run`);
+		}
 		out = out.replace(VERSION_CHECK_RE, "!1");
-		log("disabled bun runtime version floor check (running bun 1.3.13 — see header note)");
+		log(`disabled bun runtime version floor check (bun ${bunVer ? bunVer.join(".") : "?"} >= ${MIN_BUN_VERSION})`);
 	} else if (!hasVersionCheckBypass(out)) {
 		log("WARN: bun version check pattern not found — leaving omp's own floor intact");
 	}
