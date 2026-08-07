@@ -15,6 +15,7 @@ omp-config/
 ├── scripts/                  # → ~/.omp/
 │   └── omp-cny-patch.mjs     # 状态栏人民币计价补丁
 ├── skills/                   # → ~/.omp/agent/skills/
+│   ├── caveman/              # 极简沟通模式（源自 juliusbrussee/caveman）
 │   ├── domain-modeling/      # 领域建模 + ADR/术语表
 │   ├── grill-with-docs/      # 追问 + 写文档
 │   ├── grilling/             # 追问增强
@@ -111,6 +112,8 @@ cat ~/.omp/logs/omp-cny-patch.log
 来自 [anthropics/skills](https://github.com/anthropics/skills) 开源仓库：
 - **grill-me/grilling/grill-with-docs/domain-modeling** — 追问与领域建模
 - **docx/pptx/xlsx/pdf** — 文档创建与编辑（文档操作技能）
+
+另含 **caveman**（极简沟通模式）— 源自 [juliusbrussee/caveman](https://github.com/JuliusBrussee/caveman)，随其余技能一同部署到 `~/.omp/agent/skills/`。omp 的 native 技能源（`~/.omp/agent/skills/`）优先级高于 codex 源（`~/.codex/skills/`），同名技能会优先从 native 加载。
 
 ## 更新
 
