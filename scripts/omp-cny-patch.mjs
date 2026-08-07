@@ -19,6 +19,7 @@
  *   {
  *     "symbol": "¥",
  *     "rate": 7.25,
+ *     "freeProviders": ["volcengine-coding"],   // subscription providers: always show "coding plan" text, skip token pricing
  *     "models": {
  *       "deepseek:deepseek-chat": { "input": 1, "output": 2, "cacheRead": 0.1, "cacheWrite": 1 }
  *     }
@@ -30,6 +31,8 @@
  * 2. else provider-computed USD cost (usage.cost.total) x rate
  * Advisor cost is always USD x rate. With no config file the original `$`
  * rendering is preserved unchanged.
+ * `freeProviders` entries are subscription-based (e.g. coding plan) — their
+ * status line always shows "coding plan" instead of a token price.
  *
  * Usage:
  *   bun omp-cny-patch.mjs          # patch once
@@ -101,9 +104,7 @@ function resolveBunExe() {
 const HELPERS = `import{readFileSync as __cnyRead}from"node:fs";
 var __cnyCfgCache=void 0;
 function __cnyCfg(){if(__cnyCfgCache!==void 0)return __cnyCfgCache;var b=process.env.PI_CODING_AGENT_DIR;var base=b?b:((process.env.USERPROFILE||process.env.HOME||"")+"/.omp/agent");var c=null;try{var t=__cnyRead(base+"/cost.json","utf8");c=JSON.parse(t)}catch(e){c=null}__cnyCfgCache=c;return c}
-function __cnyFmt(v,c){var s=c&&c.symbol?c.symbol:"$";if(v<0.01)return s+v.toFixed(4);if(v<1)return s+v.toFixed(3);return s+v.toFixed(2)}
-function __cnyAdvisor(v){var c=__cnyCfg();var r=c&&typeof c.rate==="number"?c.rate:1;return __cnyFmt(v*r,c)}
-function __cnyCalc(n){var c=__cnyCfg();if(!c)return null;var sm=n.session.state.model;var cur=sm&&sm.provider&&sm.id?(sm.provider+"/"+sm.id):null;var total=0;var r=typeof c.rate==="number"?c.rate:1;var mo=c.models||{};var br=n.session.sessionManager&&n.session.sessionManager.getBranch?n.session.sessionManager.getBranch():null;if(br)for(var e of br){if(e&&e.type==="model_change"&&typeof e.model==="string"){cur=e.model}else if(e&&e.type==="message"&&e.message&&e.message.role==="assistant"){var u=e.message.usage;if(!u)continue;var k=cur?cur.replace("/",":"):"";var pr=mo[k]||mo[cur]||null;if(pr){total+=(u.input||0)/1e6*(pr.input||0)+(u.cacheRead||0)/1e6*(pr.cacheRead||0)+(u.cacheWrite||0)/1e6*(pr.cacheWrite||0)+(u.output||0)/1e6*(pr.output||0)}else{total+=(u.cost&&u.cost.total?u.cost.total:0)*r}}}return __cnyFmt(total,c)}`;
+function __cnyFmt(v,c){var s=c&&c.symbol?c.symbol:"$";if(v===0)return s+"0";if(v<0.01)return s+v.toFixed(4);if(v<1)return s+v.toFixed(3);return s+v.toFixed(2)}function __cnyShow(n){var c=__cnyCfg();if(!c)return null;var sm=n.session.state.model;var fp=c.freeProviders||[];return sm&&sm.provider&&fp.indexOf(sm.provider)>=0}function __cnyAdvisor(n){var c=__cnyCfg();if(!c)return null;var st=n.session.getAdvisorStats&&n.session.getAdvisorStats();var mp=st&&st.model?st.model.provider:null;var fp=c.freeProviders||[];if(mp&&fp.indexOf(mp)>=0)return "coding plan";var h=n.session.getAdvisorCost&&n.session.getAdvisorCost()||0;var r=c&&typeof c.rate==="number"?c.rate:1;return __cnyFmt(h*r,c)}function __cnyCalc(n){var c=__cnyCfg();if(!c)return null;var sm=n.session.state.model;var fp=c.freeProviders||[];if(sm&&sm.provider&&fp.indexOf(sm.provider)>=0)return "coding plan";var cur=sm&&sm.provider&&sm.id?(sm.provider+"/"+sm.id):null;var total=0;var r=typeof c.rate==="number"?c.rate:1;var mo=c.models||{};var br=n.session.sessionManager&&n.session.sessionManager.getBranch?n.session.sessionManager.getBranch():null;if(br)for(var e of br){if(e&&e.type==="model_change"&&typeof e.model==="string"){cur=e.model}else if(e&&e.type==="message"&&e.message&&e.message.role==="assistant"){var u=e.message.usage;if(!u)continue;var k=cur?cur.replace("/",":"):"";var pr=mo[k]||mo[cur]||null;if(pr){total+=(u.input||0)/1e6*(pr.input||0)+(u.cacheRead||0)/1e6*(pr.cacheRead||0)+(u.cacheWrite||0)/1e6*(pr.cacheWrite||0)+(u.output||0)/1e6*(pr.output||0)}else{total+=(u.cost&&u.cost.total?u.cost.total:0)*r}}}return __cnyFmt(total,c)}`;
 
 function log(msg) {
 	try {
@@ -157,8 +158,8 @@ function patchBundle() {
 	const preSeg = findCostSegment(src);
 	if (src.includes("__cnyCfg")) {
 		const pre = preSeg ? src.slice(preSeg[0], preSeg[1]) : "";
-		const ADVISOR_OK = /`\$\{[A-Za-z_$][\w$]*\.length\?"\+ ":""\}\$\{__cnyAdvisor\(/.test(pre);
-		if (preSeg && ADVISOR_OK && pre.includes("__cnyCalc(n)") && hasVersionCheckBypass(src)) {
+		const ADVISOR_OK = /`\$\{[A-Za-z_$][\w$]*\.length\?"\+ ":""\}\$\{__cnyAdvisor\(n\)\}/.test(pre);
+		if (preSeg && ADVISOR_OK && pre.includes("__cnyCalc(n)") && pre.includes("__cnyShow(n)") && hasVersionCheckBypass(src)) {
 			log("already patched — nothing to do");
 			return false;
 		}
@@ -182,22 +183,27 @@ function patchBundle() {
 	const [i0, i1] = seg;
 	let s = src.slice(i0, i1);
 
-	// usage cost push
+	// gate bypass for coding plan providers (keep status line visible even with no cost)
+	const gateRe = /if\(!([A-Za-z_$][\w$]*)&&!([A-Za-z_$][\w$]*)&&!([A-Za-z_$][\w$]*)&&!([A-Za-z_$][\w$]*)\)return\{content:"",visible:!1\}/;
+	if (!gateRe.test(s)) fail('cost visibility gate pattern not matched — version drift');
+	s = s.replace(gateRe, 'if(!$1&&!$2&&!$3&&!$4&&!__cnyShow(n))return{content:"",visible:!1}');
+
+	// usage cost push — coding plan shows text, else token-based CNY or USD fallback
 	const usageRe = /if\(([A-Za-z_$][\w$]*)\)([A-Za-z_$][\w$]*)\.push\(`\$\$\{([A-Za-z_$][\w$]*)\.toFixed\(2\)\}`\);/;
 	const um = s.match(usageRe);
 	if (!um) fail('usage cost push pattern not matched — version drift');
 	s = s.replace(usageRe, (_m, g1, g2, g3) =>
-		'if(' + g1 + '){let __c=__cnyCalc(n);' + g2 + '.push(__c?__c:`$${' + g3 + '.toFixed(2)}`)}'
+		'if(__cnyShow(n)){' + g2 + '.push("coding plan")}else{let __c=__cnyCalc(n);' + g2 + '.push(__c?__c:`$${' + g3 + '.toFixed(2)}`)}'
 	);
 
-	// advisor push
+	// advisor push — gate expanded for coding plan, content uses __cnyAdvisor(n)
 	const arr = um[2];
 	const advRe = new RegExp(
-		'([A-Za-z_$][\\w$]*)\\.push\\(`\\$\\{' + arr + '\\.length\\?"\\+ ":""\\}\\$\\$\\{([A-Za-z_$][\\w$]*)\\.toFixed\\(2\\)\\} \\(adv\\)`\\);'
+		'if\\(([A-Za-z_$][\\w$]*)\\)' + arr + '\\.push\\(`\\$\\{' + arr + '\\.length\\?"\\+ ":""\\}\\$\\$\\{([A-Za-z_$][\\w$]*)\\.toFixed\\(2\\)\\} \\(adv\\)`\\);'
 	);
 	const am = s.match(advRe);
 	if (!am) fail('advisor push pattern not matched — version drift');
-	s = s.replace(advRe, (_m, p1, p2) => p1 + '.push(`${' + arr + '.length?"+ ":""}${__cnyAdvisor(' + p2 + ')} (adv)`);');
+	s = s.replace(advRe, (_m, p1, p2) => 'if(' + p1 + '||__cnyShow(n))' + arr + '.push(`${' + arr + '.length?"+ ":""}${__cnyAdvisor(n)} (adv)`);');
 
 	if (pristine) {
 		copyFileSync(BUNDLE, ORIG);
@@ -213,7 +219,7 @@ function patchBundle() {
 	} else if (!hasVersionCheckBypass(out)) {
 		log("WARN: bun version check pattern not found — leaving omp's own floor intact");
 	}
-	if (out.split('id:"cost",render(').length !== 2 || !out.includes("__cnyCalc(n)")) {
+	if (out.split('id:"cost",render(').length !== 2 || !out.includes("__cnyCalc(n)") || !out.includes("__cnyShow(n)") || !out.includes('__cnyAdvisor(n)')) {
 		fail("sanity check failed after patching — bundle left unchanged, please report");
 	}
 	writeFileSync(BUNDLE, out, "utf8");
