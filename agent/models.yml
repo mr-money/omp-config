@@ -16,8 +16,8 @@ providers:
       - id: doubao-seed-2.1-turbo
         name: Doubao Seed 2.1 Turbo
         input: [text, image]
-        contextWindow: 262144
-        maxTokens: 262144
+        contextWindow: 256000
+        maxTokens: 256000
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens
