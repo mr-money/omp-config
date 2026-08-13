@@ -106,7 +106,7 @@ function resolveBunExe() {
 const HELPERS = `import{readFileSync as __cnyRead}from"node:fs";
 var __cnyCfgCache=void 0;
 function __cnyCfg(){if(__cnyCfgCache!==void 0)return __cnyCfgCache;var b=process.env.PI_CODING_AGENT_DIR;var base=b?b:((process.env.USERPROFILE||process.env.HOME||"")+"/.omp/agent");var c=null;try{var t=__cnyRead(base+"/cost.json","utf8");c=JSON.parse(t)}catch(e){c=null}__cnyCfgCache=c;return c}
-function __cnyFmt(v,c){var s=c&&c.symbol?c.symbol:"$";if(v===0)return s+"0";if(v<0.01)return s+v.toFixed(4);if(v<1)return s+v.toFixed(3);return s+v.toFixed(2)}function __cnyShow(n){var c=__cnyCfg();if(!c)return null;var sm=n.session.state.model;var fp=c.freeProviders||[];return sm&&sm.provider&&fp.indexOf(sm.provider)>=0}function __cnyAdvisor(n){var c=__cnyCfg();if(!c)return null;var st=n.session.getAdvisorStats&&n.session.getAdvisorStats();var mp=st&&st.model?st.model.provider:null;var fp=c.freeProviders||[];if(mp&&fp.indexOf(mp)>=0)return "coding plan";var h=n.session.getAdvisorCost&&n.session.getAdvisorCost()||0;var r=c&&typeof c.rate==="number"?c.rate:1;return __cnyFmt(h*r,c)}function __cnyCalc(n){var c=__cnyCfg();if(!c)return null;var sm=n.session.state.model;var fp=c.freeProviders||[];if(sm&&sm.provider&&fp.indexOf(sm.provider)>=0)return "coding plan";var cur=sm&&sm.provider&&sm.id?(sm.provider+"/"+sm.id):null;var total=0;var r=typeof c.rate==="number"?c.rate:1;var mo=c.models||{};var br=n.session.sessionManager&&n.session.sessionManager.getBranch?n.session.sessionManager.getBranch():null;if(br)for(var e of br){if(e&&e.type==="model_change"&&typeof e.model==="string"){cur=e.model}else if(e&&e.type==="message"&&e.message&&e.message.role==="assistant"){var u=e.message.usage;if(!u)continue;var k=cur?cur.replace("/",":"):"";var pr=mo[k]||mo[cur]||null;if(pr){total+=(u.input||0)/1e6*(pr.input||0)+(u.cacheRead||0)/1e6*(pr.cacheRead||0)+(u.cacheWrite||0)/1e6*(pr.cacheWrite||0)+(u.output||0)/1e6*(pr.output||0)}else{total+=(u.cost&&u.cost.total?u.cost.total:0)*r}}}return __cnyFmt(total,c)}`;
+function __cnyFmt(v,c){var s=c&&c.symbol?c.symbol:"$";if(v===0)return s+"0";if(v<0.01)return s+v.toFixed(4);if(v<1)return s+v.toFixed(3);return s+v.toFixed(2)}function __cnyShow(n){var c=__cnyCfg(),q=n&&n.session,sm=q&&q.state&&q.state.model;if(!c||!sm)return null;var fp=c.freeProviders||[];return sm.provider&&fp.indexOf(sm.provider)>=0}function __cnyAdvisor(n){var c=__cnyCfg(),q=n&&n.session;if(!c||!q)return null;var st=q.getAdvisorStats&&q.getAdvisorStats();var mp=st&&st.model?st.model.provider:null;var fp=c.freeProviders||[];if(mp&&fp.indexOf(mp)>=0)return "coding plan";var h=q.getAdvisorCost&&q.getAdvisorCost()||0;var r=c&&typeof c.rate==="number"?c.rate:1;return __cnyFmt(h*r,c)}function __cnyCalc(n){var c=__cnyCfg(),q=n&&n.session,sm=q&&q.state&&q.state.model;if(!c||!q)return null;var fp=c.freeProviders||[];if(sm&&sm.provider&&fp.indexOf(sm.provider)>=0)return "coding plan";var cur=sm&&sm.provider&&sm.id?(sm.provider+"/"+sm.id):null;var total=0;var r=typeof c.rate==="number"?c.rate:1;var mo=c.models||{};var br=q.sessionManager&&q.sessionManager.getBranch?q.sessionManager.getBranch():null;if(br)for(var e of br){if(e&&e.type==="model_change"&&typeof e.model==="string"){cur=e.model}else if(e&&e.type==="message"&&e.message&&e.message.role==="assistant"){var u=e.message.usage;if(!u)continue;var k=cur?cur.replace("/",":"):"";var pr=mo[k]||mo[cur]||null;if(pr){total+=(u.input||0)/1e6*(pr.input||0)+(u.cacheRead||0)/1e6*(pr.cacheRead||0)+(u.cacheWrite||0)/1e6*(pr.cacheWrite||0)+(u.output||0)/1e6*(pr.output||0)}else{total+=(u.cost&&u.cost.total?u.cost.total:0)*r}}}return __cnyFmt(total,c)}`;
 
 function log(msg) {
 	try {
@@ -190,7 +190,14 @@ function patchBundle() {
 	if (src.includes("__cnyCfg")) {
 		const pre = preSeg ? src.slice(preSeg[0], preSeg[1]) : "";
 		const ADVISOR_OK = /`\$\{[A-Za-z_$][\w$]*\.length\?"\+ ":""\}\$\{__cnyAdvisor\(n\)\}/.test(pre);
-		if (preSeg && ADVISOR_OK && pre.includes("__cnyCalc(n)") && pre.includes("__cnyShow(n)") && hasVersionCheckBypass(src)) {
+		if (
+			preSeg &&
+			ADVISOR_OK &&
+			pre.includes("__cnyCalc(n)") &&
+			pre.includes("__cnyShow(n)") &&
+			src.includes("q=n&&n.session") &&
+			hasVersionCheckBypass(src)
+		) {
 			log("already patched — nothing to do");
 			return false;
 		}
