@@ -84,6 +84,11 @@ cat ~/.omp/logs/omp-cny-patch.log
 
 每次启动自动运行 `--check`，检测到 omp 升级后自动重新打补丁。升级后首次启动自动重打，无需手动干预。
 
+**兼容性（已验证）**：
+- omp `17.3.4`（pi-coding-agent 17.3.4，cost 段结构 `render(i)` + `i.usageStats`）
+- bun `>=1.3.13`（实测 1.3.14、1.4.0-canary）
+- omp 升级后补丁自动重打；若新版 cost 段结构漂移，补丁会以 "version drift" 报错中止并提示更新脚本
+
 工作原理：
 - 在 `dist/cli.js` 中定位 `id:"cost"` 状态段
 - 注入 CNY 计算函数，读取 `cost.json` 获取价格配置

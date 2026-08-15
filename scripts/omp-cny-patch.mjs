@@ -47,6 +47,15 @@
  * $BUN_INSTALL, then ~/.bun/bin, then `where bun` on PATH — so a bun installed
  * by winget/scoop/npm/portable zip still works. Shim removal is best-effort:
  * a shim locked by a running omp process is renamed aside, never fatal.
+ *
+ * Verified against:
+ *   omp 17.3.4  (pi-coding-agent 17.3.4; cost segment render(i) with
+ *                `let{cost:n,...}=i.usageStats` — helpers must take the render
+ *                arg, NOT the inner `n` which is a number)
+ *   bun 1.3.13+ (floor bypass requires >= 1.3.13; tested on 1.3.14 and 1.4.0-canary)
+ * Newer omp builds self-heal via the structural anchor; if the cost segment
+ * shape drifts again, patch fails loudly with "version drift" and needs a
+ * script update.
  */
 
 import {
@@ -187,14 +196,23 @@ function patchBundle() {
 	let pristine = false;
 
 	const preSeg = findCostSegment(src);
+	// render param is the status-line node (has .session); the inner `cost:n`
+	// destructure rebinds `n` to a NUMBER in current omp, so helpers must be
+	// called with the render arg, not with `n`. Extract it dynamically so the
+	// injection survives minifier renames.
+	const rp = /id:"cost",render\(([A-Za-z_$][\w$]*)\)/.exec(src);
+	const renderParam = rp ? rp[1] : null;
+	if (!renderParam) fail('cost render param not found — bundle structure changed; patch needs updating');
 	if (src.includes("__cnyCfg")) {
 		const pre = preSeg ? src.slice(preSeg[0], preSeg[1]) : "";
-		const ADVISOR_OK = /`\$\{[A-Za-z_$][\w$]*\.length\?"\+ ":""\}\$\{__cnyAdvisor\(n\)\}/.test(pre);
+		const ADVISOR_OK = new RegExp(
+			'`\\$\\{[A-Za-z_$][\\w$]*\\.length\\?"\\+ ":""\\}\\$\\{__cnyAdvisor\\(' + renderParam + '\\)\\}'
+		).test(pre);
 		if (
 			preSeg &&
 			ADVISOR_OK &&
-			pre.includes("__cnyCalc(n)") &&
-			pre.includes("__cnyShow(n)") &&
+			pre.includes(`__cnyCalc(${renderParam})`) &&
+			pre.includes(`__cnyShow(${renderParam})`) &&
 			src.includes("q=n&&n.session") &&
 			hasVersionCheckBypass(src)
 		) {
@@ -224,24 +242,24 @@ function patchBundle() {
 	// gate bypass for coding plan providers (keep status line visible even with no cost)
 	const gateRe = /if\(!([A-Za-z_$][\w$]*)&&!([A-Za-z_$][\w$]*)&&!([A-Za-z_$][\w$]*)&&!([A-Za-z_$][\w$]*)\)return\{content:"",visible:!1\}/;
 	if (!gateRe.test(s)) fail('cost visibility gate pattern not matched — version drift');
-	s = s.replace(gateRe, 'if(!$1&&!$2&&!$3&&!$4&&!__cnyShow(n))return{content:"",visible:!1}');
+	s = s.replace(gateRe, `if(!$1&&!$2&&!$3&&!$4&&!__cnyShow(${renderParam}))return{content:"",visible:!1}`);
 
 	// usage cost push — coding plan shows text, else token-based CNY or USD fallback
 	const usageRe = /if\(([A-Za-z_$][\w$]*)\)([A-Za-z_$][\w$]*)\.push\(`\$\$\{([A-Za-z_$][\w$]*)\.toFixed\(2\)\}`\);/;
 	const um = s.match(usageRe);
 	if (!um) fail('usage cost push pattern not matched — version drift');
 	s = s.replace(usageRe, (_m, g1, g2, g3) =>
-		'if(__cnyShow(n)){' + g2 + '.push("coding plan")}else{let __c=__cnyCalc(n);' + g2 + '.push(__c?__c:`$${' + g3 + '.toFixed(2)}`)}'
+		`if(__cnyShow(${renderParam})){` + g2 + '.push("coding plan")}else{let __c=__cnyCalc(' + renderParam + ');' + g2 + '.push(__c?__c:`$${' + g3 + '.toFixed(2)}`)}'
 	);
 
-	// advisor push — gate expanded for coding plan, content uses __cnyAdvisor(n)
+	// advisor push — gate expanded for coding plan, content uses __cnyAdvisor(renderParam)
 	const arr = um[2];
 	const advRe = new RegExp(
 		'if\\(([A-Za-z_$][\\w$]*)\\)' + arr + '\\.push\\(`\\$\\{' + arr + '\\.length\\?"\\+ ":""\\}\\$\\$\\{([A-Za-z_$][\\w$]*)\\.toFixed\\(2\\)\\} \\(adv\\)`\\);'
 	);
 	const am = s.match(advRe);
 	if (!am) fail('advisor push pattern not matched — version drift');
-	s = s.replace(advRe, (_m, p1, p2) => 'if(' + p1 + '||__cnyShow(n))' + arr + '.push(`${' + arr + '.length?"+ ":""}${__cnyAdvisor(n)} (adv)`);');
+	s = s.replace(advRe, (_m, p1, p2) => 'if(' + p1 + '||__cnyShow(' + renderParam + '))' + arr + '.push(`${' + arr + '.length?"+ ":""}${__cnyAdvisor(' + renderParam + ')} (adv)`);');
 
 	if (pristine) {
 		copyFileSync(BUNDLE, ORIG);
@@ -268,7 +286,12 @@ function patchBundle() {
 	} else if (!hasVersionCheckBypass(out)) {
 		log("WARN: bun version check pattern not found — leaving omp's own floor intact");
 	}
-	if (out.split('id:"cost",render(').length !== 2 || !out.includes("__cnyCalc(n)") || !out.includes("__cnyShow(n)") || !out.includes('__cnyAdvisor(n)')) {
+	if (
+		out.split('id:"cost",render(').length !== 2 ||
+		!out.includes(`__cnyCalc(${renderParam})`) ||
+		!out.includes(`__cnyShow(${renderParam})`) ||
+		!out.includes(`__cnyAdvisor(${renderParam})`)
+	) {
 		fail("sanity check failed after patching — bundle left unchanged, please report");
 	}
 	writeFileSync(BUNDLE, out, "utf8");
