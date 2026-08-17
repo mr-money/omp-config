@@ -79,8 +79,8 @@ cat ~/.omp/logs/omp-cny-patch.log
 | 角色 | 模型 | 思考档位 | 用途 |
 |------|------|----------|------|
 | `default` | deepseek-v4-flash-ga-260731 | — | 默认主模型，日常编码 |
-| `plan` | GLM-5.2 | `high` | 任务规划阶段 |
-| `slow` | GLM-5.2 | `max` | 深度推理 / 复杂问题 |
+| `plan` | GLM-5.3 | `high` | 任务规划阶段 |
+| `slow` | GLM-5.3 | `max` | 深度推理 / 复杂问题 |
 | `smol` | doubao-seed-2.0-mini | `minimal` | 轻量快速任务 |
 | `advisor` | doubao-seed-2.1-turbo | `medium` | 顾问模式 |
 | `designer` | doubao-seed-2.1-turbo | `medium` | UI/UX 设计任务 |
@@ -95,7 +95,7 @@ cat ~/.omp/logs/omp-cny-patch.log
 
 内置火山引擎大模型 API（方舟，coding plan 订阅制）：
 - **deepseek-v4-flash-ga-260731** — 默认模型（1M 上下文）
-- **glm-5.2** — 规划 / 慢速深度推理（1M 上下文）
+- **glm-5.3** — 规划 / 慢速深度推理（1M 上下文）
 - **doubao-seed-2.0-mini** — 轻量 / 顾问 / 视觉 / commit 模型
 
 `apiKey` 部署时由 `setup.ps1` 交互填入（或通过 `OMP_API_KEY` 环境变量），仓库中保持 `<YOUR_API_KEY>` 占位脱敏。

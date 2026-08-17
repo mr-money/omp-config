@@ -5,8 +5,8 @@ providers:
     apiKey: <YOUR_API_KEY>  # 替换为火山引擎 API Key
     authHeader: true
     models:
-      - id: glm-5.2
-        name: GLM-5.2 1M
+      - id: glm-5.3
+        name: GLM-5.3 1M
         input: [text]
         contextWindow: 1024000
         maxTokens: 65536

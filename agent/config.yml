@@ -3,8 +3,8 @@ providers:
     []
 setupVersion: 1
 modelRoles: 
-  plan: volcengine-coding/glm-5.2:high
-  slow: volcengine-coding/glm-5.2:max
+  plan: volcengine-coding/glm-5.3:high
+  slow: volcengine-coding/glm-5.3:max
   advisor: volcengine-coding/doubao-seed-2.1-turbo:medium
   commit: volcengine-coding/doubao-seed-2.0-mini:off
   smol: volcengine-coding/doubao-seed-2.0-mini:minimal
