@@ -1,4 +1,4 @@
-# omp-config 一键部署脚本 (Windows / PowerShell 5.1+)
+﻿# omp-config 一键部署脚本 (Windows / PowerShell 5.1+)
 # 用法：仓库根目录运行 .\setup.ps1
 # 前置：已安装 bun；已安装 omp (`bun install -g @oh-my-pi/pi-coding-agent`)
 # 行为：探测本机路径 -> 复制配置 -> 填 API Key -> 跑 patch --setup
