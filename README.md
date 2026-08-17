@@ -94,9 +94,10 @@ cat ~/.omp/logs/omp-cny-patch.log
 
 ### 费用 (`cost.json`)
 
-人民币计价，预设汇率 7.25，`freeProviders` 列表中的提供商不计费：
-- DeepSeek V4 Flash: 输入 ¥1/1M, 输出 ¥2/1M, 缓存读 ¥0.02/1M, 缓存写 ¥1/1M
-- DeepSeek V4 Pro: 输入 ¥3/1M, 输出 ¥6/1M, 缓存读 ¥0.025/1M, 缓存写 ¥3/1M
+- **`freeProviders: ["volcengine-coding"]`** — 火山引擎 coding plan 为订阅制，状态栏显示 `coding plan`，不计 token 费用
+- **DeepSeek 官方 API** — 按量付费，人民币计价（汇率 7.25）：
+  - V4 Flash: 输入 ¥1/1M, 输出 ¥2/1M, 缓存读 ¥0.02/1M, 缓存写 ¥1/1M
+  - V4 Pro: 输入 ¥3/1M, 输出 ¥6/1M, 缓存读 ¥0.025/1M, 缓存写 ¥3/1M
 ### 价格补丁 (`omp-cny-patch.mjs`)
 
 每次启动自动运行 `--check`，检测到 omp 升级后自动重新打补丁。升级后首次启动自动重打，无需手动干预。
