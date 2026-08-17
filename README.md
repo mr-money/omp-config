@@ -87,7 +87,7 @@ cat ~/.omp/logs/omp-cny-patch.log
 | `commit` | doubao-seed-2.1-turbo | `off` | 生成 commit message |
 | `tiny` | doubao-seed-2.1-turbo | `off` | 极小任务（禁用思考） |
 | `vision` | doubao-seed-2.1-turbo | `medium` | 视觉/截图理解 |
-| `DeepSeek` | deepseek-v4-flash | `high` | 官方 DeepSeek 通道（备用；需自行在 models.yml 配置 `deepseek` provider） |
+| `DeepSeek` | deepseek-v4-flash | `high` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用） |
 
 **思考档位循环 (`cycleOrder`)**: `smol` → `default` → `slow` → `DeepSeek`，逐级升档。
 
@@ -100,21 +100,7 @@ cat ~/.omp/logs/omp-cny-patch.log
 
 `apiKey` 部署时由 `setup.ps1` 交互填入（或通过 `OMP_API_KEY` 环境变量），仓库中保持 `<YOUR_API_KEY>` 占位脱敏。
 
-> **DeepSeek 官方通道（`deepseek` provider）未内置**：`config.yml` 的 `DeepSeek` 角色与 `cost.json` 定价指向官方 API，但 `models.yml` 不包含该 provider（无 baseUrl / apiKey）。若需启用，请自行在 `~/.omp/agent/models.yml` 添加：
-> ```yaml
-> providers:
->   deepseek:
->     baseUrl: https://api.deepseek.com/v1   # 以官方文档为准
->     api: openai-completions
->     apiKey: <DEEPSEEK_API_KEY>
->     models:
->       - id: deepseek-v4-flash
->         name: DeepSeek V4 Flash
->         input: [text]
->         contextWindow: 1024000
->         maxTokens: 65536
-> ```
-> 未配置时该角色不可用，但**不影响**默认模型（走火山 coding plan，免费）。
+> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色与 `cost.json` 定价指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，无需在 `models.yml` 配置——外部配置仅含火山 `volcengine-coding`。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。
 
 ### 费用 (`cost.json`)
 
@@ -138,7 +124,7 @@ cat ~/.omp/logs/omp-cny-patch.log
   - `cacheRead` = 输入（缓存命中）价格
   - `output` = 输出价格
 
-  > 该定价仅在使用 `deepseek` provider 时生效；未配置 provider 时此价格表不会计入（见上文 DeepSeek 官方通道说明）。
+  > 该定价在使用 `deepseek` provider 时生效（omp 内置，baseUrl 已配置，仅需在 omp 设置中填入官方 API Key），用于覆盖 omp 内置的 USD 旧价。
 
 ### 价格补丁 (`omp-cny-patch.mjs`)
 
