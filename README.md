@@ -21,6 +21,8 @@ omp-config/
 
 ## 在新机器上安装
 
+> **PowerShell**：`setup.ps1` 同时支持 Windows PowerShell 5.1 与 PowerShell 7+（脚本已带 UTF-8 BOM，中文注释/输出在两种环境下均解析正常；终端若显示中文乱码仅影响显示，不影响执行）。
+
 ### 前置条件
 
 - 已安装 `omp`（`bun install -g @oh-my-pi/pi-coding-agent`）
@@ -60,7 +62,13 @@ cd omp-config
 ```powershell
 # 启动 omp，检查状态栏显示 ¥ 符号
 omp
+```
 
+状态栏费用行为：
+- **volcengine-coding（coding plan）**：显示 `coding plan`，不显示 token 费用、不显示 `+ ¥x (adv)` 顾问尾巴
+- **DeepSeek 官方 API**：显示人民币金额（按北京时段自动选峰/谷价）
+
+```powershell
 # 检查补丁日志
 cat ~/.omp/logs/omp-cny-patch.log
 ```
@@ -79,22 +87,38 @@ cat ~/.omp/logs/omp-cny-patch.log
 | `commit` | doubao-seed-2.1-turbo | `off` | 生成 commit message |
 | `tiny` | doubao-seed-2.1-turbo | `off` | 极小任务（禁用思考） |
 | `vision` | doubao-seed-2.1-turbo | `medium` | 视觉/截图理解 |
-| `DeepSeek` | deepseek-v4-flash | `high` | 官方 DeepSeek 通道（备用） |
+| `DeepSeek` | deepseek-v4-flash | `high` | 官方 DeepSeek 通道（备用；需自行在 models.yml 配置 `deepseek` provider） |
 
 **思考档位循环 (`cycleOrder`)**: `smol` → `default` → `slow` → `DeepSeek`，逐级升档。
 
 ### 模型提供商 (`models.yml`)
 
-使用火山引擎大模型 API（方舟）：
+内置火山引擎大模型 API（方舟，coding plan 订阅制）：
 - **deepseek-v4-flash-ga-260731** — 默认模型（1M 上下文）
 - **glm-5.2** — 规划 / 慢速深度推理（1M 上下文）
 - **doubao-seed-2.1-turbo** — 轻量 / 顾问 / 视觉 / commit 模型
 
 `apiKey` 部署时由 `setup.ps1` 交互填入（或通过 `OMP_API_KEY` 环境变量），仓库中保持 `<YOUR_API_KEY>` 占位脱敏。
 
+> **DeepSeek 官方通道（`deepseek` provider）未内置**：`config.yml` 的 `DeepSeek` 角色与 `cost.json` 定价指向官方 API，但 `models.yml` 不包含该 provider（无 baseUrl / apiKey）。若需启用，请自行在 `~/.omp/agent/models.yml` 添加：
+> ```yaml
+> providers:
+>   deepseek:
+>     baseUrl: https://api.deepseek.com/v1   # 以官方文档为准
+>     api: openai-completions
+>     apiKey: <DEEPSEEK_API_KEY>
+>     models:
+>       - id: deepseek-v4-flash
+>         name: DeepSeek V4 Flash
+>         input: [text]
+>         contextWindow: 1024000
+>         maxTokens: 65536
+> ```
+> 未配置时该角色不可用，但**不影响**默认模型（走火山 coding plan，免费）。
+
 ### 费用 (`cost.json`)
 
-- **`freeProviders: ["volcengine-coding"]`** — 火山引擎 coding plan 为订阅制，状态栏显示 `coding plan`，不计 token 费用
+- **`freeProviders: ["volcengine-coding"]`** — 火山引擎 coding plan 为订阅制，状态栏显示 `coding plan`，不计 token 费用、不显示顾问尾巴
 - **DeepSeek 官方 API** — 按量付费，人民币计价（汇率 7.25），执行峰谷定价（北京时间高峰 09:00-12:00、14:00-18:00，其余为空闲；状态栏按当前时刻自动选用对应价格）：
   - V4 Flash（元/百万 tokens）：
     | 项目 | 空闲时段 | 高峰时段 |
@@ -108,6 +132,14 @@ cat ~/.omp/logs/omp-cny-patch.log
     | 输入（缓存命中） | 0.15 | 0.30 |
     | 输入（缓存未命中） | 4.5 | 9.0 |
     | 输出 | 13.5 | 27.0 |
+
+  字段映射（`cost.json` 内每个模型为 `peak` / `offpeak` 两组）：
+  - `input` / `cacheWrite` = 输入（缓存未命中）价格
+  - `cacheRead` = 输入（缓存命中）价格
+  - `output` = 输出价格
+
+  > 该定价仅在使用 `deepseek` provider 时生效；未配置 provider 时此价格表不会计入（见上文 DeepSeek 官方通道说明）。
+
 ### 价格补丁 (`omp-cny-patch.mjs`)
 
 每次启动自动运行 `--check`，检测到 omp 升级后自动重新打补丁。升级后首次启动自动重打，无需手动干预。
@@ -120,6 +152,8 @@ cat ~/.omp/logs/omp-cny-patch.log
 工作原理：
 - 在 `dist/cli.js` 中定位 `id:"cost"` 状态段
 - 注入 CNY 计算函数，读取 `cost.json` 获取价格配置
+- 支持峰谷定价：`cost.json` 内模型带 `peak`/`offpeak` 子对象时，按北京时间（UTC+8）自动选用高峰（09:00-12:00、14:00-18:00）或空闲价格；平铺结构向后兼容
+- 顾问段：仅在计费（非 coding plan）提供商下追加 `+ ¥x (adv)`；coding plan 提供商只显示 `coding plan`
 - 用 `omp.cmd` 包装器替代原始入口，每次启动先跑补丁
 - **bun 版本校验**：禁用 omp 的 bun 版本下限检查前，先校验实际 bun `>=1.3.13`。若过旧则拒绝打补丁（保留 omp 自身检查，让其干净拒绝），避免太老 bun 强制启动 omp 崩溃。升级 bun 后重跑 `--setup` 即可
 - 移除 bun 生成的 `omp.exe` shim（PATHEXT 中 `.EXE` 优先于 `.CMD`，会遮蔽包装器）；若 shim 正被运行中的 omp 进程锁定（bun 安装的 omp 常见），无法删除时自动重命名为 `omp.exe.disabled`，下次运行时清扫残留
