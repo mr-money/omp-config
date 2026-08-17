@@ -82,8 +82,8 @@ cat ~/.omp/logs/omp-cny-patch.log
 | `plan` | GLM-5.2 | `high` | 任务规划阶段 |
 | `slow` | GLM-5.2 | `max` | 深度推理 / 复杂问题 |
 | `smol` | doubao-seed-2.0-mini | `minimal` | 轻量快速任务 |
-| `advisor` | doubao-seed-2.0-mini | `medium` | 顾问模式 |
-| `designer` | doubao-seed-2.0-mini | `medium` | UI/UX 设计任务 |
+| `advisor` | doubao-seed-2.1-turbo | `medium` | 顾问模式 |
+| `designer` | doubao-seed-2.1-turbo | `medium` | UI/UX 设计任务 |
 | `commit` | doubao-seed-2.0-mini | `off` | 生成 commit message |
 | `tiny` | doubao-seed-2.0-mini | `off` | 极小任务（禁用思考） |
 | `vision` | doubao-seed-2.0-mini | `medium` | 视觉/截图理解 |
