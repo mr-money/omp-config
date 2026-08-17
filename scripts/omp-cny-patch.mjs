@@ -213,7 +213,7 @@ function patchBundle() {
 	if (src.includes("__cnyCfg")) {
 		const pre = preSeg ? src.slice(preSeg[0], preSeg[1]) : "";
 		const ADVISOR_OK = new RegExp(
-			'`\\$\\{[A-Za-z_$][\\w$]*\\.length\\?"\\+ ":""\\}\\$\\{__cnyAdvisor\\(' + renderParam + '\\)\\}'
+			'if\\(!__cnyShow\\(' + renderParam + '\\)&&[A-Za-z_$][\\w$]*\\).*\\$\\{__cnyAdvisor\\(' + renderParam + '\\)\\}'
 		).test(pre);
 		if (
 			preSeg &&
@@ -259,14 +259,15 @@ function patchBundle() {
 		`if(__cnyShow(${renderParam})){` + g2 + '.push("coding plan")}else{let __c=__cnyCalc(' + renderParam + ');' + g2 + '.push(__c?__c:`$${' + g3 + '.toFixed(2)}`)}'
 	);
 
-	// advisor push — gate expanded for coding plan, content uses __cnyAdvisor(renderParam)
+	// advisor push — only for paid (non-coding-plan) providers; coding plan
+	// shows just "coding plan" with no " + ¥x (adv)" tail
 	const arr = um[2];
 	const advRe = new RegExp(
 		'if\\(([A-Za-z_$][\\w$]*)\\)' + arr + '\\.push\\(`\\$\\{' + arr + '\\.length\\?"\\+ ":""\\}\\$\\$\\{([A-Za-z_$][\\w$]*)\\.toFixed\\(2\\)\\} \\(adv\\)`\\);'
 	);
 	const am = s.match(advRe);
 	if (!am) fail('advisor push pattern not matched — version drift');
-	s = s.replace(advRe, (_m, p1, p2) => 'if(' + p1 + '||__cnyShow(' + renderParam + '))' + arr + '.push(`${' + arr + '.length?"+ ":""}${__cnyAdvisor(' + renderParam + ')} (adv)`);');
+	s = s.replace(advRe, (_m, p1, p2) => 'if(!__cnyShow(' + renderParam + ')&&' + p1 + ')' + arr + '.push(`${' + arr + '.length?"+ ":""}${__cnyAdvisor(' + renderParam + ')} (adv)`);');
 
 	if (pristine) {
 		copyFileSync(BUNDLE, ORIG);
