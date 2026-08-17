@@ -13,8 +13,8 @@ providers:
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens
-      - id: doubao-seed-2.1-turbo
-        name: Doubao Seed 2.1 Turbo
+      - id: doubao-seed-2.0-mini
+        name: Doubao Seed 2.0 Mini
         input: [text, image]
         contextWindow: 256000
         maxTokens: 256000
