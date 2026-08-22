@@ -55,6 +55,7 @@ cd omp-config
 | `~/.omp/agent/models.yml` | `apiKey` | setup 交互填入 / `OMP_API_KEY` 环境变量 | 火山引擎 API Key；优先读环境变量，否则交互提示；已填则跳过 |
 | `~/.omp/agent/lsp.json` | `servers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`gopls` / `python -m pylsp`）；探测到绝对路径则写回 |
 | `~/.omp/agent/config.yml` | `shellPath` | setup 探测写入 | 检测到 pwsh 则自动写入；未检测到则省略（omp 回退到 cmd.exe） |
+| `~/.omp/agent/config.yml` | `statusLine.segmentOptions.git` | 直接复制 | 隐藏状态栏 git 段（分支 / +N staged / *N unstaged / ?N untracked） |
 | `~/.omp/agent/settings.json` | — | 直接复制 | 不再单独设 shellPath，统一走 config.yml |
 
 ### 验证
@@ -74,6 +75,20 @@ cat ~/.omp/logs/omp-cny-patch.log
 ```
 
 ## 配置说明
+### 状态栏 Git 段 (`config.yml` → `statusLine`)
+
+```yaml
+statusLine:
+  segmentOptions:
+    git:
+      showBranch: false        # 隐藏分支名
+      showStaged: false        # 隐藏 +N（已暂存）
+      showUnstaged: false      # 隐藏 *N（未暂存）
+      showUntracked: false     # 隐藏 ?N（未跟踪）
+```
+
+四项全关后 git 段整段隐藏（不显示分支与文件计数），其余状态栏段（model / path / context / cost 等）不受影响。保持 `statusLine.preset` 默认值不变，仅通过 `segmentOptions` 覆盖。
+
 ### 模型角色 (`config.yml` → `modelRoles`)
 
 | 角色 | 模型 | 思考档位 | 用途 |

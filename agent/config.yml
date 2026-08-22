@@ -25,3 +25,10 @@ cycleOrder:
   - default
   - slow
   - DeepSeek
+statusLine: 
+  segmentOptions: 
+    git: 
+      showBranch: false
+      showStaged: false
+      showUnstaged: false
+      showUntracked: false
