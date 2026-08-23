@@ -23,7 +23,7 @@ omp-config/
 
 > **PowerShell**：`setup.ps1` 同时支持 Windows PowerShell 5.1 与 PowerShell 7+（脚本已带 UTF-8 BOM，中文注释/输出在两种环境下均解析正常；终端若显示中文乱码仅影响显示，不影响执行）。
 
-- 已安装 `omp` **18.x**（当前为 bun 全局包：`curl -fsSL https://omp.sh/install | sh`；安装后 `omp.exe` 是 8KB 启动 shim，真实 bundle 在 `~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`。18.0.1 曾用原生 exe，补丁两种布局均兼容）
+- 已安装 `omp` **18.0.2+**（当前为 bun 全局包：`curl -fsSL https://omp.sh/install | sh`；安装后 `omp.exe` 是 8KB 启动 shim，真实 bundle 在 `~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`。18.0.1 原生 exe 布局**不再支持**——低于 18.0.2 的 bun 包会先自动升级；18.0.1 原生 exe 需手动换装 bun 全局包）
 - 已安装 `bun`（patch 脚本用 bun 运行）
 - 已安装语言服务器（gopls、pylsp 等）
 
@@ -142,43 +142,43 @@ statusLine:
 
   > 该定价在使用 `deepseek` provider 时生效（omp 内置，baseUrl 已配置，仅需在 omp 设置中填入官方 API Key），用于覆盖 omp 内置的 USD 旧价。
 
-补丁同时兼容 omp 18.x 的两种安装布局，改写三处代码：
+补丁改写三处代码（仅支持 **omp 18.0.2+ bun 全局包**，18.0.1 原生 exe 布局不再支持）：
 
-**布局 B（当前，omp 18.0.2+ bun 全局包）**：`omp.exe` 是 8KB bun shim，bundle 是普通 JS（`dist/cli.js`），可任意改长度。补丁在 bundle 头部注入运行时 helpers（`__cnyCfg`/`__cnyFmt`/`__cnyAdvisor`/`__cnyIsFree`），运行时读取 `~/.omp/agent/cost.json`，并字符串替换三处：
+`omp.exe` 是 8KB bun shim，bundle 是普通 JS（`dist/cli.js`），可任意改长度。补丁在 bundle 头部注入运行时 helpers（`__cnyCfg`/`__cnyFmt`/`__cnyIsFree`），运行时读取 `~/.omp/agent/cost.json`，并字符串替换三处：
 
 1. `xEs()`（费用格式化函数）：`$<USD>` → `¥<USD×汇率>`（汇率默认 7.25）
 2. `id:"cost"` 状态段：注入 `freeProviders` 检查——当模型 provider 为订阅制（默认 `volcengine-coding`）时显示 `coding plan` 而非 token 价格，并隐藏顾问尾巴
 3. `id:"context_pct"` 状态段：去掉 `xx.x%/window` 双数字（窗口总量），只留用量百分比，且取整右对齐为固定 4 列（`  0%`..`100%`）——上下文段宽度恒定不变
 
-**布局 A（omp 18.0.1 原生 exe）**：JS bundle 内嵌在二进制里，只能**同长度字节替换**（改长会破坏 blob 偏移、导致 omp 回退到 bun REPL）。`rate`/`freeProviders` 在**打补丁时**从 `cost.json` 编译进替换文本。对应三处为 `Rno()`、`id:"cost"` 段（Saa）、`id:"context_pct"` 段（xaa）。
+`cost.json` 是唯一配置源（运行时读取），缺文件时回退默认值（¥ / 7.25 / `["volcengine-coding"]`）。
 
-`cost.json` 是唯一配置源（布局 B 运行时读取；布局 A 编译进替换文本）。缺文件时回退默认值（¥ / 7.25 / `["volcengine-coding"]`）。
+>
+**版本门槛**：检测到安装的 bun 包版本低于 18.0.2 时，先自动运行 `bun <bundle> update` 升级到兼容版本再打补丁（60s 超时，测试模式 `CNY_PATCH_TARGET` 下跳过）；18.0.1 原生 exe（无 bundle）会提示手动换装 bun 全局包。
 
 **每次 `--check` 幂等**：已补丁则 no-op；`omp update` 重装后下次运行自动重打。首次补丁自动备份 `<target>.orig` 供 `--restore` 回滚。
 
-**自愈 wrapper（布局 B，`--setup`）**：`omp update` 每次都会重写 `dist/cli.js`，补丁随之丢失。`--setup` 会把 bun 的 `omp.exe` shim 改名成 `omp.exe.bak`，安装 `~/.bun/bin/omp.cmd` 包装器——每次 `omp` 启动先跑 `--check`（自动重打补丁）再启动 bundle。回滚 `--restore` 会移除 wrapper 并还原 shim。
+**自愈 wrapper（`--setup`）**：`omp update` 每次都会重写 `dist/cli.js`（补丁丢失）并重建 `omp.exe` shim（会遮蔽 wrapper）。`--setup` 会把 bun 的 `omp.exe` shim 改名成 `omp.exe.bak`，安装 `~/.bun/bin/omp.cmd` 包装器——每次 `omp` 启动先跑 `--check`（自动重打补丁）再启动 bundle；`omp update` 命令结束时自动再跑一次 `--setup` 夺回 shim 并重打补丁，全程无需手动干预。回滚 `--restore` 会移除 wrapper 并还原 shim。
 
 **兼容性（已验证）**：
 - omp `18.0.3`（bun 全局包，plain-JS bundle）
-- omp `18.0.1`（win32-x64 原生 exe，内嵌 bundle）
 
 工作原理：
-- 布局 B 定位 bundle：`~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`
-- 布局 A 定位 exe：`$BUN_INSTALL/bin/omp.exe` → `~/.bun/bin/omp.exe` → `where omp`（且 >100KB 才视为原生 exe）
+- 定位 bundle：`~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`
 - 首次补丁备份 `<target>.orig`；替换用「暂存 `.cny` → 重命名换入」避免 Windows 对运行中文件的写入锁（EBUSY）
 - 顾问段：仅计费（非 coding plan）提供商显示 `+ ¥x (adv)`；coding plan 提供商只显示 `coding plan`
-- **峰谷定价已不再注入**：18.x 原生按 provider 定价计算 `usageStats.cost`，补丁只做 `×汇率` 与 ¥ 符号（布局 A 的同长度约束也容不下 17.x 时代的 ~1.5KB helper 块）
+- **峰谷定价已不再注入**：按 provider 定价计算 `usageStats.cost`，补丁只做 `×汇率` 与 ¥ 符号
+- 升级后 `.orig` 自动刷新（避免 `--restore` 降级到旧版本 bundle）
 - 回滚：`bun ~/.omp/omp-cny-patch.mjs --restore`（还原 `.orig`、移除 wrapper、还原 shim）
 
 ### 安装布局与单入口（当前状态）
 
-当前机器使用 **布局 B（omp 18.0.3 bun 全局包）**，只有单一入口：
+当前机器使用 **omp 18.0.3 bun 全局包**，只有单一入口：
 
-- `~/.bun/bin/omp.cmd` — 启动包装器：先跑 `bun ~/.omp/omp-cny-patch.mjs --check` 自愈补丁，再 `bun …\dist\cli.js` 启动
+- `~/.bun/bin/omp.cmd` — 启动包装器：先跑 `bun ~/.omp/omp-cny-patch.mjs --check` 自愈补丁，再 `bun …\dist\cli.js` 启动；`omp update` 结束后自动重跑 `--setup` 夺回 shim
 - `~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js` — 真实 bundle（已打补丁）
-- `~/.bun/bin/omp.bunx` / `node_modules\.bin\omp.exe` — bun 生成 shim（8–16KB，非独立程序）
+- `~/.bun/bin/omp.bunx` / `~/.bun/bin/omp.exe.bak` — bun 生成 shim（8–16KB，非独立程序；被 wrapper 改名暂存）
 
-**无版本冲突**：PATH 仅含 `~/.bun/bin` 一处 omp 入口，`where omp` 只命中 `omp.cmd`，无独立原生 exe 可执行。18.0.1 时代的内嵌 exe（`omp.exe.orig` 等残留）已清理，`--restore` 的 pristine 备份由补丁脚本在首次 `--check` 时从当前 bundle 自动重建。
+**无版本冲突**：PATH 仅含 `~/.bun/bin` 一处 omp 入口，`where omp` 只命中 `omp.cmd`，无独立原生 exe 可执行。`omp.exe` shim 在 `omp update` 时由 bun 重建，wrapper 的 update 钩子会立即夺回。
 
 ### 技能
 
