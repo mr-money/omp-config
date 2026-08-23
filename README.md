@@ -23,7 +23,7 @@ omp-config/
 
 > **PowerShell**：`setup.ps1` 同时支持 Windows PowerShell 5.1 与 PowerShell 7+（脚本已带 UTF-8 BOM，中文注释/输出在两种环境下均解析正常；终端若显示中文乱码仅影响显示，不影响执行）。
 
-- 已安装 `omp` **18.0.2+**（当前为 bun 全局包：`curl -fsSL https://omp.sh/install | sh`；安装后 `omp.exe` 是 8KB 启动 shim，真实 bundle 在 `~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`。18.0.1 原生 exe 布局**不再支持**——低于 18.0.2 的 bun 包会先自动升级；18.0.1 原生 exe 需手动换装 bun 全局包）
+- `setup.ps1` 会自动安装/升级 bun 全局包到推荐的 **OMP 18.0.3**；patch 最低支持 18.0.2，已验证 18.0.3。18.0.1 原生 exe 布局不再作为 patch 目标。
 - 已安装 `bun`（patch 脚本用 bun 运行）
 - 已安装语言服务器（gopls、pylsp 等）
 
@@ -45,6 +45,8 @@ cd omp-config
 3. 探测本机 pwsh / gopls / python 路径，写回对应配置
 4. 若 `models.yml` 仍是 `<YOUR_API_KEY>` 占位，交互提示输入
 5. 执行 `bun ~/.omp/omp-cny-patch.mjs --setup` 激活人民币计价补丁（布局 B 下同时安装自愈 wrapper）
+
+只读健康检查：`.\doctor.ps1`。它检查 Bun、OMP/bundle、配置文件、CNY patch、wrapper 及 gopls/python，不会自动修复。
 
 ### 配置项一览
 
@@ -153,7 +155,7 @@ statusLine:
 `cost.json` 是唯一配置源（运行时读取），缺文件时回退默认值（¥ / 7.25 / `["volcengine-coding"]`）。
 
 >
-**版本门槛**：检测到安装的 bun 包版本低于 18.0.2 时，先自动运行 `bun <bundle> update` 升级到兼容版本再打补丁（60s 超时，测试模式 `CNY_PATCH_TARGET` 下跳过）；18.0.1 原生 exe（无 bundle）会提示手动换装 bun 全局包。
+**版本 manifest**：最低支持 `18.0.2`，推荐 `18.0.3`，当前已验证 `18.0.3`，patch 版本为 `2026.08.23.1`。低于最低版本时自动升级并重新读取 package.json；升级未达到最低版本会安全失败，不会继续留下半 patch。
 
 **每次 `--check` 幂等**：已补丁则 no-op；`omp update` 重装后下次运行自动重打。首次补丁自动备份 `<target>.orig` 供 `--restore` 回滚。
 

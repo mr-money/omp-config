@@ -1,5 +1,4 @@
-# 前置：已安装 bun；已安装 omp 18.x（bun 全局包 `curl -fsSL https://omp.sh/install | sh`，或 18.0.1 原生 exe）
-# 行为：探测本机路径 -> 复制配置 -> 填 API Key -> 跑 patch --setup
+# 行为：检查/安装升级 OMP -> 复制配置 -> 填 API Key -> 跑 patch --setup
 
 $ErrorActionPreference = "Stop"
 
@@ -7,7 +6,10 @@ $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $OmpHome = Join-Path $env:USERPROFILE ".omp"
 $AgentDir = Join-Path $OmpHome "agent"
 $PatchScript = Join-Path $OmpHome "omp-cny-patch.mjs"
-$OmpPkgBundle = Join-Path $env:USERPROFILE ".bun\install\global\node_modules\@oh-my-pi\pi-coding-agent\dist\cli.js"
+$bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $env:USERPROFILE ".bun" }
+$OmpPkgDir = Join-Path $bunInstall "install\global\node_modules\@oh-my-pi\pi-coding-agent"
+$OmpPkgBundle = Join-Path $OmpPkgDir "dist\cli.js"
+$RecommendedOmpVersion = "18.0.3"
 
 function Write-Step { param($msg) Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-OK   { param($msg) Write-Host "    OK  $msg" -ForegroundColor Green }
@@ -30,35 +32,22 @@ if (-not $bun) {
 }
 Write-OK "bun $(& bun --version) @ $($bun.Source)"
 
-# 检查 omp 安装布局（18.0.2+ 为 bun 全局包：omp.exe 是 8KB shim，bundle 在 dist/cli.js；18.0.1 为原生 exe）
-$bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $env:USERPROFILE ".bun" }
+# 检查并确保 bun 全局 bundle；旧 native exe 不再作为 patch 目标
 $ompExe = Join-Path $bunInstall "bin\omp.exe"
-$ompLayout = $null
-if (Test-Path $OmpPkgBundle) {
-    $ompLayout = "bundle"
-    Write-OK "omp 18.0.2+ bun 全局包: dist/cli.js 存在"
-} elseif (Test-Path $ompExe) {
-    $len = (Get-Item $ompExe).Length
-    if ($len -gt 100000) {
-        $ompLayout = "exe"
-        Write-OK "omp 18.0.1 原生 exe: $ompExe ($len bytes)"
-    } else {
-        Write-Warn "omp.exe 是 8KB shim 但 bundle 缺失，patch 将无法应用"
-    }
-} else {
-    $whereOmp = Get-Command omp -ErrorAction SilentlyContinue
-    if ($whereOmp -and $whereOmp.Source -match "omp\.exe$") {
-        $ompExe = $whereOmp.Source
-        $len = (Get-Item $ompExe).Length
-        if ($len -gt 100000) { $ompLayout = "exe"; Write-OK "omp 原生 exe: $ompExe" }
-    }
+$ompLayout = "bundle"
+$needInstall = $true
+if (Test-Path (Join-Path $OmpPkgDir "package.json")) {
+    try { $installed = (Get-Content (Join-Path $OmpPkgDir "package.json") -Raw | ConvertFrom-Json).version; $needInstall = ([version]$installed -lt [version]$RecommendedOmpVersion) } catch { $needInstall = $true }
 }
-if (-not $ompLayout) {
-    Write-Fail "未找到 omp 安装（bundle $OmpPkgBundle 或原生 exe $ompExe 均缺失）"
-    Write-Fail "请先安装 omp 18.x：curl -fsSL https://omp.sh/install | sh"
-    exit 1
+if ($needInstall) {
+    Write-Step "安装/升级 omp 到 $RecommendedOmpVersion"
+    & bun install -g "@oh-my-pi/pi-coding-agent@$RecommendedOmpVersion"
+    if ($LASTEXITCODE -ne 0) { Write-Fail "omp 安装/升级失败"; exit 1 }
 }
-Write-OK "omp 布局: $ompLayout"
+if (-not (Test-Path $OmpPkgBundle)) { Write-Fail "升级后仍未找到 bundle: $OmpPkgBundle"; exit 1 }
+$actual = (Get-Content (Join-Path $OmpPkgDir "package.json") -Raw | ConvertFrom-Json).version
+if ([version]$actual -lt [version]"18.0.2") { Write-Fail "OMP 版本校验失败: $actual"; exit 1 }
+Write-OK "omp bundle $actual"
 
 # 2. 确保目录存在
 New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
@@ -220,7 +209,7 @@ Write-Step "部署完成"
 Write-Host ""
 Write-Host "  omp 配置目录: $AgentDir"
 Write-Host "  patch 脚本:   $PatchScript"
-Write-Host "  omp 安装: $($(if ($ompLayout -eq 'bundle') { $OmpPkgBundle } else { $ompExe })) ($ompLayout)"
+  Write-Host "  omp 安装: $OmpPkgBundle (bundle)"
 Write-Host ""
 Write-Host "  启动: omp"
 Write-Host "  回滚: bun $PatchScript --restore"

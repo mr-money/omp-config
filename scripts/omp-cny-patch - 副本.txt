@@ -33,7 +33,6 @@
  *   { "symbol": "¥", "rate": 7.25, "freeProviders": ["volcengine-coding"] }
  * Missing/unreadable config falls back to ¥ / 7.25 / ["volcengine-coding"].
  *
- * Patch manifest: minimum 18.0.2, recommended/verified 18.0.3.
  * Version gate: omp below 18.0.2 is not supported (the 18.0.1 embedded-exe
  * layout is NOT patched). If the installed bun package is older, the script
  * first runs `bun dist/cli.js update` (the bundle's own non-interactive
@@ -71,13 +70,7 @@ const DEFAULT_RATE = 7.25;
 const DEFAULT_FREE = ["volcengine-coding"];
 
 // Layout B floor: omp below this is not supported and gets upgraded first.
-const PATCH_MANIFEST = Object.freeze({
-	minimumVersion: "18.0.2",
-	recommendedVersion: "18.0.3",
-	verifiedVersions: ["18.0.3"],
-	patchVersion: "2026.08.23.1",
-});
-const MIN_BUNDLE_VER = parseVersion(PATCH_MANIFEST.minimumVersion);
+const MIN_BUNDLE_VER = [18, 0, 2];
 
 let _target = null;
 /**
@@ -145,13 +138,11 @@ function ensureCompatibleBundleVersion() {
 		});
 		log(`omp update output: ${out.trim().split(/\r?\n/)[0]}`);
 		const again = JSON.parse(readFileSync(BUNDLE_PKG, "utf8"));
-		if (cmpVersion(parseVersion(again.version), MIN_BUNDLE_VER) < 0) {
-			fail(`omp upgrade did not reach minimum ${minStr} (actual ${again.version || "unknown"})`);
-		}
 		log(`omp bundle now ${again.version}`);
 		return true;
 	} catch (e) {
-		fail(`omp version check/upgrade failed: ${e.code || e.message}`);
+		log(`WARN: version gate skipped (${e.code || e.message}) - patch anchors will verify compatibility`);
+		return false;
 	}
 }
 
@@ -207,7 +198,7 @@ function __cnyIsFree(){var c=__cnyCfg();if(!c)return false;var f=c.freeProviders
 
 /** True if the bundle already carries the CNY patch markers. */
 function isBundlePatched(src) {
-	return src.includes(`__CNY_PATCH_VERSION__=${PATCH_MANIFEST.patchVersion}`) && src.includes("__cnyIsFree") && src.includes("__cnyFmt");
+	return src.includes("__cnyIsFree") && src.includes("__cnyFmt");
 }
 
 function patchBundle(bundle, rate, free) {
@@ -220,20 +211,12 @@ function patchBundle(bundle, rate, free) {
 	if (!src.includes('id:"cost",render(')) fail("cost segment (`id:\"cost\",render(`) not found — 18.x bundle drifted; patch needs updating");
 	if (!src.includes('id:"context_pct"')) fail("context_pct segment not found — 18.x bundle drifted; patch needs updating");
 
-	// A foreign/old patch must be removed from the pristine copy before applying.
-	if (src.includes("__cnyIsFree") || src.includes("__cnyFmt")) {
-		if (!existsSync(bundle + ".orig")) fail("old CNY patch found but no pristine backup exists");
-		log("old or mismatched CNY patch found — restoring pristine bundle first");
-		src = readFileSync(bundle + ".orig", "utf8");
-		if (src.includes("__cnyIsFree") || src.includes("__cnyFmt")) fail("pristine backup is already patched; refusing partial patch");
-	}
-
 	// --- Inject helpers at head (after the `// @bun` marker) ---
 	const at = src.indexOf("// @bun");
 	if (at === -1) fail("unexpected bundle head (marker `// @bun` missing)");
 	const nl = src.indexOf("\n", at);
 	const injectAt = nl === -1 ? src.length : nl + 1;
-	src = src.slice(0, injectAt) + `var __CNY_PATCH_VERSION__=${JSON.stringify(PATCH_MANIFEST.patchVersion)};\n` + HELPERS + src.slice(injectAt);
+	src = src.slice(0, injectAt) + HELPERS + src.slice(injectAt);
 
 	// --- Rewrite cost formatter xEs ---
 	const xEsOld = 'function xEs(e,t,n){let s=e.toFixed(2);if(!t)return`$${s}`;if(n.getSymbolPreset()==="nerd"){let o=n.icon.subscription;return o?`${o} ${s}`:`S${s}`}return`S${s}`}';
@@ -261,7 +244,7 @@ function patchBundle(bundle, rate, free) {
 	);
 
 	// Post-write sanity
-	if (src.split('id:"cost",render(').length !== 2 || !src.includes("__cnyIsFree") || !src.includes(`__CNY_PATCH_VERSION__=${PATCH_MANIFEST.patchVersion}`)) {
+	if (src.split('id:"cost",render(').length !== 2 || !src.includes("__cnyIsFree")) {
 		fail("sanity check failed after patching — bundle left unchanged, please report");
 	}
 	return src;
