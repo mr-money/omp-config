@@ -27,10 +27,6 @@ omp-config/
 - 已安装 `bun`（patch 脚本用 bun 运行）
 - 已安装语言服务器（gopls、pylsp 等）
 
-- 已安装 `omp` **18.x**（原生可执行文件 `omp.exe`，非 17.x 的 bun 全局包；安装：`irm https://omp.sh/install.ps1 | iex`）
-- 已安装 `bun`（patch 脚本用 bun 运行）
-- 已安装语言服务器（gopls、pylsp 等）
-
 ### 步骤（一键部署）
 
 ```powershell
@@ -173,27 +169,16 @@ statusLine:
 - 顾问段：仅计费（非 coding plan）提供商显示 `+ ¥x (adv)`；coding plan 提供商只显示 `coding plan`
 - **峰谷定价已不再注入**：18.x 原生按 provider 定价计算 `usageStats.cost`，补丁只做 `×汇率` 与 ¥ 符号（布局 A 的同长度约束也容不下 17.x 时代的 ~1.5KB helper 块）
 - 回滚：`bun ~/.omp/omp-cny-patch.mjs --restore`（还原 `.orig`、移除 wrapper、还原 shim）
-**omp 18.x** 起是原生可执行文件（`omp.exe`），JS bundle 内嵌在二进制里，不再有 `dist/cli.js` 可改、也没有 bun shim/包装器。补丁改为**同长度字节替换**嵌入式 bundle 中的三处代码（改长会破坏 blob 偏移、导致 omp 无法启动）：
 
-1. `Rno()`（费用格式化函数）：`$<USD>` → `¥<USD×汇率>`（汇率默认 7.25）
-2. `id:"cost"` 状态段：增加 `freeProviders` 检查——当模型 provider 为订阅制（默认 `volcengine-coding`）时显示 `coding plan` 而非 token 价格，并隐藏顾问尾巴
-3. `id:"context_pct"` 状态段：去掉 `xx.x%/window` 双数字（窗口总量），只留用量百分比，且取整右对齐为固定 4 列（`  0%`..`100%`）——上下文段宽度恒定不变
+### 安装布局与单入口（当前状态）
 
-`rate` 与 `freeProviders` 在**打补丁时**从 `~/.omp/agent/cost.json` 编译进替换文本（运行时 bundle 无法读文件），cost.json 仍是唯一配置源。缺文件时回退默认值（¥ / 7.25 / `["volcengine-coding"]`）。
+当前机器使用 **布局 B（omp 18.0.3 bun 全局包）**，只有单一入口：
 
-**每次 `--check` 幂等**：已补丁则 no-op；`omp update` 换新 exe 后下次运行自动重打。首次补丁自动备份 `omp.exe.orig` 供 `--restore` 回滚。
+- `~/.bun/bin/omp.cmd` — 启动包装器：先跑 `bun ~/.omp/omp-cny-patch.mjs --check` 自愈补丁，再 `bun …\dist\cli.js` 启动
+- `~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js` — 真实 bundle（已打补丁）
+- `~/.bun/bin/omp.bunx` / `node_modules\.bin\omp.exe` — bun 生成 shim（8–16KB，非独立程序）
 
-**兼容性（已验证）**：
-- omp `18.0.1`（win32-x64 原生 exe，内嵌 bundle）
-- 17.x 的 `dist/cli.js` 注入方式已移除（不再适用原生 exe）
-
-工作原理：
-- 定位 `omp.exe`（`$BUN_INSTALL/bin/omp.exe` → `~/.bun/bin/omp.exe` → `where omp`）
-- 同长度字节替换：`Rno()`、`id:"cost"` 段与 `id:"context_pct"` 段，总字节数保持不变（任何长度变化都会使 exe 回退到 bun REPL）
-- 首次补丁备份 `omp.exe.orig`；替换用「暂存 `.cny` → 重命名换入」避免 Windows 对运行中 exe 的写入锁（EBUSY）
-- 顾问段：仅计费（非 coding plan）提供商显示 `+ ¥x (adv)`；coding plan 提供商只显示 `coding plan`
-- **峰谷定价已不再注入**：18.x 原生按 provider 定价计算 `usageStats.cost`，补丁只做 `×汇率` 与 ¥ 符号；同长度约束也容不下 17.x 时代的 ~1.5KB helper 块
-- 回滚：`bun ~/.omp/omp-cny-patch.mjs --restore`（从 `omp.exe.orig` 还原）
+**无版本冲突**：PATH 仅含 `~/.bun/bin` 一处 omp 入口，`where omp` 只命中 `omp.cmd`，无独立原生 exe 可执行。18.0.1 时代的内嵌 exe（`omp.exe.orig` 等残留）已清理，`--restore` 的 pristine 备份由补丁脚本在首次 `--check` 时从当前 bundle 自动重建。
 
 ### 技能
 

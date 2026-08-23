@@ -8,15 +8,6 @@ $OmpHome = Join-Path $env:USERPROFILE ".omp"
 $AgentDir = Join-Path $OmpHome "agent"
 $PatchScript = Join-Path $OmpHome "omp-cny-patch.mjs"
 $OmpPkgBundle = Join-Path $env:USERPROFILE ".bun\install\global\node_modules\@oh-my-pi\pi-coding-agent\dist\cli.js"
-# 前置：已安装 bun；已安装 omp 18.x（原生 exe，`irm https://omp.sh/install.ps1 | iex`）
-# 行为：探测本机路径 -> 复制配置 -> 填 API Key -> 跑 patch --setup
-
-$ErrorActionPreference = "Stop"
-
-$RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
-$OmpHome = Join-Path $env:USERPROFILE ".omp"
-$AgentDir = Join-Path $OmpHome "agent"
-$PatchScript = Join-Path $OmpHome "omp-cny-patch.mjs"
 
 function Write-Step { param($msg) Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-OK   { param($msg) Write-Host "    OK  $msg" -ForegroundColor Green }
