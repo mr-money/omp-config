@@ -1,5 +1,13 @@
-# omp-config 一键部署脚本 (Windows / PowerShell 5.1+)
-# 用法：仓库根目录运行 .\setup.ps1
+# 前置：已安装 bun；已安装 omp 18.x（bun 全局包 `curl -fsSL https://omp.sh/install | sh`，或 18.0.1 原生 exe）
+# 行为：探测本机路径 -> 复制配置 -> 填 API Key -> 跑 patch --setup
+
+$ErrorActionPreference = "Stop"
+
+$RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$OmpHome = Join-Path $env:USERPROFILE ".omp"
+$AgentDir = Join-Path $OmpHome "agent"
+$PatchScript = Join-Path $OmpHome "omp-cny-patch.mjs"
+$OmpPkgBundle = Join-Path $env:USERPROFILE ".bun\install\global\node_modules\@oh-my-pi\pi-coding-agent\dist\cli.js"
 # 前置：已安装 bun；已安装 omp 18.x（原生 exe，`irm https://omp.sh/install.ps1 | iex`）
 # 行为：探测本机路径 -> 复制配置 -> 填 API Key -> 跑 patch --setup
 
@@ -31,21 +39,35 @@ if (-not $bun) {
 }
 Write-OK "bun $(& bun --version) @ $($bun.Source)"
 
-# 检查 omp 可执行文件（18.x 起为原生 exe，不再是 bun 全局包）
+# 检查 omp 安装布局（18.0.2+ 为 bun 全局包：omp.exe 是 8KB shim，bundle 在 dist/cli.js；18.0.1 为原生 exe）
 $bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $env:USERPROFILE ".bun" }
 $ompExe = Join-Path $bunInstall "bin\omp.exe"
-if (-not (Test-Path $ompExe)) {
+$ompLayout = $null
+if (Test-Path $OmpPkgBundle) {
+    $ompLayout = "bundle"
+    Write-OK "omp 18.0.2+ bun 全局包: dist/cli.js 存在"
+} elseif (Test-Path $ompExe) {
+    $len = (Get-Item $ompExe).Length
+    if ($len -gt 100000) {
+        $ompLayout = "exe"
+        Write-OK "omp 18.0.1 原生 exe: $ompExe ($len bytes)"
+    } else {
+        Write-Warn "omp.exe 是 8KB shim 但 bundle 缺失，patch 将无法应用"
+    }
+} else {
     $whereOmp = Get-Command omp -ErrorAction SilentlyContinue
     if ($whereOmp -and $whereOmp.Source -match "omp\.exe$") {
         $ompExe = $whereOmp.Source
+        $len = (Get-Item $ompExe).Length
+        if ($len -gt 100000) { $ompLayout = "exe"; Write-OK "omp 原生 exe: $ompExe" }
     }
 }
-if (-not (Test-Path $ompExe)) {
-    Write-Fail "未找到 omp 可执行文件: $ompExe"
-    Write-Fail "请先安装 omp 18.x（原生 exe），例如: irm https://omp.sh/install.ps1 | iex"
+if (-not $ompLayout) {
+    Write-Fail "未找到 omp 安装（bundle $OmpPkgBundle 或原生 exe $ompExe 均缺失）"
+    Write-Fail "请先安装 omp 18.x：curl -fsSL https://omp.sh/install | sh"
     exit 1
 }
-Write-OK "omp 可执行文件: $ompExe"
+Write-OK "omp 布局: $ompLayout"
 
 # 2. 确保目录存在
 New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
@@ -207,7 +229,7 @@ Write-Step "部署完成"
 Write-Host ""
 Write-Host "  omp 配置目录: $AgentDir"
 Write-Host "  patch 脚本:   $PatchScript"
-Write-Host "  omp 可执行文件: $ompExe"
+Write-Host "  omp 安装: $($(if ($ompLayout -eq 'bundle') { $OmpPkgBundle } else { $ompExe })) ($ompLayout)"
 Write-Host ""
 Write-Host "  启动: omp"
 Write-Host "  回滚: bun $PatchScript --restore"

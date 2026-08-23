@@ -23,7 +23,9 @@ omp-config/
 
 > **PowerShell**：`setup.ps1` 同时支持 Windows PowerShell 5.1 与 PowerShell 7+（脚本已带 UTF-8 BOM，中文注释/输出在两种环境下均解析正常；终端若显示中文乱码仅影响显示，不影响执行）。
 
-### 前置条件
+- 已安装 `omp` **18.x**（当前为 bun 全局包：`curl -fsSL https://omp.sh/install | sh`；安装后 `omp.exe` 是 8KB 启动 shim，真实 bundle 在 `~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`。18.0.1 曾用原生 exe，补丁两种布局均兼容）
+- 已安装 `bun`（patch 脚本用 bun 运行）
+- 已安装语言服务器（gopls、pylsp 等）
 
 - 已安装 `omp` **18.x**（原生可执行文件 `omp.exe`，非 17.x 的 bun 全局包；安装：`irm https://omp.sh/install.ps1 | iex`）
 - 已安装 `bun`（patch 脚本用 bun 运行）
@@ -46,7 +48,7 @@ cd omp-config
 2. 复制 `agent/` → `~/.omp/agent/`、`skills/` → `~/.omp/agent/skills/`、`scripts/omp-cny-patch.mjs` → `~/.omp/`
 3. 探测本机 pwsh / gopls / python 路径，写回对应配置
 4. 若 `models.yml` 仍是 `<YOUR_API_KEY>` 占位，交互提示输入
-5. 执行 `bun ~/.omp/omp-cny-patch.mjs --setup` 激活人民币计价补丁
+5. 执行 `bun ~/.omp/omp-cny-patch.mjs --setup` 激活人民币计价补丁（布局 B 下同时安装自愈 wrapper）
 
 ### 配置项一览
 
@@ -61,8 +63,10 @@ cd omp-config
 ### 验证
 
 ```powershell
-# 启动 omp，检查状态栏显示 ¥ 符号
+# 启动 omp，检查状态栏显示 ¥ 符号 / coding plan（订阅制提供商）
 omp
+# 或直接执行 bundle（布局 B，不经过 wrapper）
+bun "%USERPROFILE%\.bun\install\global\node_modules\@oh-my-pi\pi-coding-agent\dist\cli.js"
 ```
 
 - **上下文段（context_pct）**：只显示用量百分比，取整右对齐固定 4 列（`  0%`..`100%`），无窗口总量、宽度恒定
@@ -142,7 +146,33 @@ statusLine:
 
   > 该定价在使用 `deepseek` provider 时生效（omp 内置，baseUrl 已配置，仅需在 omp 设置中填入官方 API Key），用于覆盖 omp 内置的 USD 旧价。
 
-### 价格补丁 (`omp-cny-patch.mjs`)
+补丁同时兼容 omp 18.x 的两种安装布局，改写三处代码：
+
+**布局 B（当前，omp 18.0.2+ bun 全局包）**：`omp.exe` 是 8KB bun shim，bundle 是普通 JS（`dist/cli.js`），可任意改长度。补丁在 bundle 头部注入运行时 helpers（`__cnyCfg`/`__cnyFmt`/`__cnyAdvisor`/`__cnyIsFree`），运行时读取 `~/.omp/agent/cost.json`，并字符串替换三处：
+
+1. `xEs()`（费用格式化函数）：`$<USD>` → `¥<USD×汇率>`（汇率默认 7.25）
+2. `id:"cost"` 状态段：注入 `freeProviders` 检查——当模型 provider 为订阅制（默认 `volcengine-coding`）时显示 `coding plan` 而非 token 价格，并隐藏顾问尾巴
+3. `id:"context_pct"` 状态段：去掉 `xx.x%/window` 双数字（窗口总量），只留用量百分比，且取整右对齐为固定 4 列（`  0%`..`100%`）——上下文段宽度恒定不变
+
+**布局 A（omp 18.0.1 原生 exe）**：JS bundle 内嵌在二进制里，只能**同长度字节替换**（改长会破坏 blob 偏移、导致 omp 回退到 bun REPL）。`rate`/`freeProviders` 在**打补丁时**从 `cost.json` 编译进替换文本。对应三处为 `Rno()`、`id:"cost"` 段（Saa）、`id:"context_pct"` 段（xaa）。
+
+`cost.json` 是唯一配置源（布局 B 运行时读取；布局 A 编译进替换文本）。缺文件时回退默认值（¥ / 7.25 / `["volcengine-coding"]`）。
+
+**每次 `--check` 幂等**：已补丁则 no-op；`omp update` 重装后下次运行自动重打。首次补丁自动备份 `<target>.orig` 供 `--restore` 回滚。
+
+**自愈 wrapper（布局 B，`--setup`）**：`omp update` 每次都会重写 `dist/cli.js`，补丁随之丢失。`--setup` 会把 bun 的 `omp.exe` shim 改名成 `omp.exe.bak`，安装 `~/.bun/bin/omp.cmd` 包装器——每次 `omp` 启动先跑 `--check`（自动重打补丁）再启动 bundle。回滚 `--restore` 会移除 wrapper 并还原 shim。
+
+**兼容性（已验证）**：
+- omp `18.0.3`（bun 全局包，plain-JS bundle）
+- omp `18.0.1`（win32-x64 原生 exe，内嵌 bundle）
+
+工作原理：
+- 布局 B 定位 bundle：`~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`
+- 布局 A 定位 exe：`$BUN_INSTALL/bin/omp.exe` → `~/.bun/bin/omp.exe` → `where omp`（且 >100KB 才视为原生 exe）
+- 首次补丁备份 `<target>.orig`；替换用「暂存 `.cny` → 重命名换入」避免 Windows 对运行中文件的写入锁（EBUSY）
+- 顾问段：仅计费（非 coding plan）提供商显示 `+ ¥x (adv)`；coding plan 提供商只显示 `coding plan`
+- **峰谷定价已不再注入**：18.x 原生按 provider 定价计算 `usageStats.cost`，补丁只做 `×汇率` 与 ¥ 符号（布局 A 的同长度约束也容不下 17.x 时代的 ~1.5KB helper 块）
+- 回滚：`bun ~/.omp/omp-cny-patch.mjs --restore`（还原 `.orig`、移除 wrapper、还原 shim）
 **omp 18.x** 起是原生可执行文件（`omp.exe`），JS bundle 内嵌在二进制里，不再有 `dist/cli.js` 可改、也没有 bun shim/包装器。补丁改为**同长度字节替换**嵌入式 bundle 中的三处代码（改长会破坏 blob 偏移、导致 omp 无法启动）：
 
 1. `Rno()`（费用格式化函数）：`$<USD>` → `¥<USD×汇率>`（汇率默认 7.25）
