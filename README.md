@@ -25,8 +25,8 @@ omp-config/
 
 ### 前置条件
 
-- 已安装 `omp`（`bun install -g @oh-my-pi/pi-coding-agent`）
-- 已安装 `bun`（要求 `>=1.3.13`；patch 脚本会校验，bun 过低会拒绝并提示升级）
+- 已安装 `omp` **18.x**（原生可执行文件 `omp.exe`，非 17.x 的 bun 全局包；安装：`irm https://omp.sh/install.ps1 | iex`）
+- 已安装 `bun`（patch 脚本用 bun 运行）
 - 已安装语言服务器（gopls、pylsp 等）
 
 ### 步骤（一键部署）
@@ -65,9 +65,7 @@ cd omp-config
 omp
 ```
 
-状态栏费用行为：
-- **volcengine-coding（coding plan）**：显示 `coding plan`，不显示 token 费用、不显示 `+ ¥x (adv)` 顾问尾巴
-- **DeepSeek 官方 API**：显示人民币金额（按北京时段自动选峰/谷价）
+- **上下文段（context_pct）**：只显示用量百分比，取整右对齐固定 4 列（`  0%`..`100%`），无窗口总量、宽度恒定
 
 ```powershell
 # 检查补丁日志
@@ -121,7 +119,7 @@ statusLine:
 ### 费用 (`cost.json`)
 
 - **`freeProviders: ["volcengine-coding"]`** — 火山引擎 coding plan 为订阅制，状态栏显示 `coding plan`，不计 token 费用、不显示顾问尾巴
-- **DeepSeek 官方 API** — 按量付费，人民币计价（汇率 7.25），执行峰谷定价（北京时间**周一至周五**高峰 09:00-12:00、14:00-18:00，周末与其余时段为空闲；状态栏按当前时刻自动选用对应价格）：
+- **DeepSeek 官方 API** — 按量付费，人民币计价（汇率 7.25）。18.x 原生按 provider 定价计算成本；补丁负责 `$`→`¥` 与 `×汇率`：
   - 定价来源：[DeepSeek 官方定价页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)（价格如有变动，以此页为准）
   - 覆盖模型：`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro`
   - V4 Flash / V4 Flash Vision（元/百万 tokens）：
@@ -145,23 +143,27 @@ statusLine:
   > 该定价在使用 `deepseek` provider 时生效（omp 内置，baseUrl 已配置，仅需在 omp 设置中填入官方 API Key），用于覆盖 omp 内置的 USD 旧价。
 
 ### 价格补丁 (`omp-cny-patch.mjs`)
+**omp 18.x** 起是原生可执行文件（`omp.exe`），JS bundle 内嵌在二进制里，不再有 `dist/cli.js` 可改、也没有 bun shim/包装器。补丁改为**同长度字节替换**嵌入式 bundle 中的三处代码（改长会破坏 blob 偏移、导致 omp 无法启动）：
 
-每次启动自动运行 `--check`，检测到 omp 升级后自动重新打补丁。升级后首次启动自动重打，无需手动干预。
+1. `Rno()`（费用格式化函数）：`$<USD>` → `¥<USD×汇率>`（汇率默认 7.25）
+2. `id:"cost"` 状态段：增加 `freeProviders` 检查——当模型 provider 为订阅制（默认 `volcengine-coding`）时显示 `coding plan` 而非 token 价格，并隐藏顾问尾巴
+3. `id:"context_pct"` 状态段：去掉 `xx.x%/window` 双数字（窗口总量），只留用量百分比，且取整右对齐为固定 4 列（`  0%`..`100%`）——上下文段宽度恒定不变
+
+`rate` 与 `freeProviders` 在**打补丁时**从 `~/.omp/agent/cost.json` 编译进替换文本（运行时 bundle 无法读文件），cost.json 仍是唯一配置源。缺文件时回退默认值（¥ / 7.25 / `["volcengine-coding"]`）。
+
+**每次 `--check` 幂等**：已补丁则 no-op；`omp update` 换新 exe 后下次运行自动重打。首次补丁自动备份 `omp.exe.orig` 供 `--restore` 回滚。
 
 **兼容性（已验证）**：
-- omp `17.3.4`（pi-coding-agent 17.3.4，cost 段结构 `render(i)` + `i.usageStats`）
-- bun `>=1.3.13`（实测 1.3.14、1.4.0-canary）
-- omp 升级后补丁自动重打；若新版 cost 段结构漂移，补丁会以 "version drift" 报错中止并提示更新脚本
+- omp `18.0.1`（win32-x64 原生 exe，内嵌 bundle）
+- 17.x 的 `dist/cli.js` 注入方式已移除（不再适用原生 exe）
 
 工作原理：
-- 在 `dist/cli.js` 中定位 `id:"cost"` 状态段
-- 注入 CNY 计算函数，读取 `cost.json` 获取价格配置
-- 支持峰谷定价：`cost.json` 内模型带 `peak`/`offpeak` 子对象时，按北京时间（UTC+8）自动选用高峰（周一至周五 09:00-12:00、14:00-18:00）或空闲价格；周末一律按空闲价。平铺结构向后兼容
-- 顾问段：仅在计费（非 coding plan）提供商下追加 `+ ¥x (adv)`；coding plan 提供商只显示 `coding plan`
-- 用 `omp.cmd` 包装器替代原始入口，每次启动先跑补丁
-- **bun 版本校验**：禁用 omp 的 bun 版本下限检查前，先校验实际 bun `>=1.3.13`。若过旧则拒绝打补丁（保留 omp 自身检查，让其干净拒绝），避免太老 bun 强制启动 omp 崩溃。升级 bun 后重跑 `--setup` 即可
-- 移除 bun 生成的 `omp.exe` shim（PATHEXT 中 `.EXE` 优先于 `.CMD`，会遮蔽包装器）；若 shim 正被运行中的 omp 进程锁定（bun 安装的 omp 常见），无法删除时自动重命名为 `omp.exe.disabled`，下次运行时清扫残留
-- 回滚：`bun ~/.omp/omp-cny-patch.mjs --restore`（还原原始 `cli.js`、删除包装器、清理 `.disabled` 残留，之后重新 `bun install -g @oh-my-pi/pi-coding-agent` 重建 shim）
+- 定位 `omp.exe`（`$BUN_INSTALL/bin/omp.exe` → `~/.bun/bin/omp.exe` → `where omp`）
+- 同长度字节替换：`Rno()`、`id:"cost"` 段与 `id:"context_pct"` 段，总字节数保持不变（任何长度变化都会使 exe 回退到 bun REPL）
+- 首次补丁备份 `omp.exe.orig`；替换用「暂存 `.cny` → 重命名换入」避免 Windows 对运行中 exe 的写入锁（EBUSY）
+- 顾问段：仅计费（非 coding plan）提供商显示 `+ ¥x (adv)`；coding plan 提供商只显示 `coding plan`
+- **峰谷定价已不再注入**：18.x 原生按 provider 定价计算 `usageStats.cost`，补丁只做 `×汇率` 与 ¥ 符号；同长度约束也容不下 17.x 时代的 ~1.5KB helper 块
+- 回滚：`bun ~/.omp/omp-cny-patch.mjs --restore`（从 `omp.exe.orig` 还原）
 
 ### 技能
 

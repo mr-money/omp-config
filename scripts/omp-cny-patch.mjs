@@ -1,129 +1,99 @@
 #!/usr/bin/env bun
 /**
- * omp CNY cost patch — status-line `$` -> configurable symbol (default ¥).
+ * omp CNY cost patch — status-line cost segment `$` -> ¥ (CNY, USD×rate).
  *
- * Also neutralizes the runtime bun-version floor check (see VERSION_CHECK_RE
- * below): bun 1.3.14 — the version omp pins as its floor — carries a known
- * segfault regression (type confusion when a top-level `await` resumes under an
- * active AsyncLocalStorage/OpenTelemetry context; fixed on bun main, no stable
- * release yet). To let the clean 1.3.13 run, the floor check is replaced with
- * `!1` — but only after verifying the actual bun is >= MIN_BUN_VERSION
- * (1.3.13). If the installed bun is older, the check is left intact so omp's
- * own floor rejects it cleanly instead of crashing.
- * `--restore` puts the pristine bundle back and re-enables the check.
+ * omp 18.x ships as a standalone native executable (`omp.exe`) with the whole
+ * JS bundle embedded in the binary — there is no `dist/cli.js` to patch and no
+ * bun shim/wrapper to install. The bundle is loaded by absolute offsets, so the
+ * ONLY safe edit is a strictly same-length byte replacement: any length change
+ * (even +1 byte) shifts the embedded blobs and the exe falls back to the bun
+ * REPL instead of launching omp.
  *
- * Version-agnostic: locates the `id:"cost"` status segment structurally
- * (not by exact minified string), so it keeps working after pi-coding-agent
- * upgrades rewrite dist/cli.js. The omp.cmd wrapper runs `--check` on every
- * launch, so an upgrade is self-healed on the next `omp` invocation.
+ * This patch rewrites three code fragments in the embedded bundle, in place, to
+ * exactly the same byte length:
  *
- * Cost config: ~/.omp/agent/cost.json
- *   {
- *     "symbol": "¥",
- *     "rate": 7.25,
- *     "freeProviders": ["volcengine-coding"],   // subscription providers: always show "coding plan" text, skip token pricing
- *     "models": {
- *       "deepseek:deepseek-chat": { "input": 1, "output": 2, "cacheRead": 0.1, "cacheWrite": 1 }
- *       // or peak/offpeak sub-objects (DeepSeek 峰谷定价, Beijing time; weekdays peak 09:00-12:00 & 14:00-18:00):
- *       // "deepseek:deepseek-v4-flash": {
- *       //   "peak":   { "input": 3.0, "output": 9.0, "cacheRead": 0.1,  "cacheWrite": 3.0 },
- *       //   "offpeak":{" input": 1.5, "output": 4.5, "cacheRead": 0.05, "cacheWrite": 1.5 }
- *       // }
- *     }
- *   }
+ *   1. `Rno()` — the cost formatter. Original emits `$<usd>` / `S<usd>`.
+ *      Patched emits `¥<usd×rate>` with rate 7.25 (and keeps the `nerd`
+ *      subscription-icon branch).
  *
- * Keys accept "provider:model" (colon) or "provider/model" (slash).
- * A model entry with `peak`/`offpeak` sub-objects is priced by the current
- * Beijing peak window (weekdays 09:00-12:00, 14:00-18:00; weekends are always
- * off-peak per api-docs.deepseek.com pricing note); a flat entry applies always.
- * Per message:
- * 1. exact per-model CNY price from `models` -> token-based CNY total
- * 2. else provider-computed USD cost (usage.cost.total) x rate
- * Advisor cost is always USD x rate. With no config file the original `$`
- * rendering is preserved unchanged.
- * `freeProviders` entries are subscription-based (e.g. coding plan) — their
- * status line always shows "coding plan" instead of a token price.
+ *   2. `Saa` — the `id:"cost"` status segment. Patched adds a
+ *      `freeProviders` check: when the active model's provider is a
+ *      subscription provider (default `volcengine-coding`), the segment shows
+ *      `coding plan` instead of a token price and suppresses the advisor tail
+ *      (the subscription is already paid; a ¥ token bill would mislead).
+ *
+ *   3. `xaa` — the `id:"context_pct"` status segment. Patched drops the
+ *      `xx.x%/window` double figure (the raw context-window size) and keeps
+ *      only the usage percent plus the auto-compact spinner. Same information
+ *      about the peak usage. The percent is an integer right-aligned to a
+ *      fixed 4-column field (`  0%`..`100%`) so the segment never changes
+ *      width.
+ *
+ * Rate / freeProviders are compiled in at patch time from
+ * `~/.omp/agent/cost.json` (the patch script can read files; the runtime
+ * bundle cannot), so cost.json stays the single source of truth:
+ *   { "symbol": "¥", "rate": 7.25, "freeProviders": ["volcengine-coding"] }
+ * If cost.json is absent/unreadable the patch falls back to ¥ / 7.25 /
+ * ["volcengine-coding"], which are also the repo defaults.
+ *
+ * Peak/offpeak per-model pricing (17.x-era, driven by a per-message token walk)
+ * is intentionally NOT carried over: 18.x computes `usageStats.cost` natively
+ * from provider pricing, and the same-length constraint leaves no room for the
+ * ~1.5KB helper block the old approach injected. The visible outcome — a ¥ cost
+ * in the status bar — is preserved.
  *
  * Usage:
- *   bun omp-cny-patch.mjs          # patch once
- *   bun omp-cny-patch.mjs --check  # idempotent self-heal (used by omp.cmd wrapper)
- *   bun omp-cny-patch.mjs --setup  # create ~/.bun/bin/omp.cmd wrapper (+ remove bun shims)
- *   bun omp-cny-patch.mjs --restore# restore original bundle, remove wrapper
+ *   bun omp-cny-patch.mjs          # patch once (same-length, in place)
+ *   bun omp-cny-patch.mjs --check  # idempotent self-heal (re-patch if upgraded)
+ *   bun omp-cny-patch.mjs --setup  # ensure patched + self-install to ~/.omp
+ *   bun omp-cny-patch.mjs --restore# restore pristine omp.exe from .orig
  *
- * Fresh-machine safe: setup self-installs this script to ~/.omp/omp-cny-patch.mjs
- * (the wrapper calls back into it by absolute path), and bun.exe is resolved via
- * $BUN_INSTALL, then ~/.bun/bin, then `where bun` on PATH — so a bun installed
- * by winget/scoop/npm/portable zip still works. Shim removal is best-effort:
- * a shim locked by a running omp process is renamed aside, never fatal.
+ * The first patch backs up the pristine exe to `omp.exe.orig` so `--restore`
+ * can put it back. `omp update` replaces the exe; the patch is lost and the
+ * next `--check`/`--setup` re-applies it (setup.ps1 runs --setup on deploy).
  *
- * Verified against:
- *   omp 17.3.4  (pi-coding-agent 17.3.4; cost segment render(i) with
- *                `let{cost:n,...}=i.usageStats` — helpers must take the render
- *                arg, NOT the inner `n` which is a number)
- *   bun 1.3.13+ (floor bypass requires >= 1.3.13; tested on 1.3.14 and 1.4.0-canary)
- * Newer omp builds self-heal via the structural anchor; if the cost segment
- * shape drifts again, patch fails loudly with "version drift" and needs a
- * script update.
+ * Verified against: omp 18.0.1 (win32-x64 native exe, embedded bundle)
  */
 
-import {
-	existsSync,
-	readFileSync,
-	writeFileSync,
-	copyFileSync,
-	rmSync,
-	renameSync,
-	statSync,
-	readdirSync,
-	mkdirSync,
-	appendFileSync,
-} from "node:fs";
+import { existsSync, readFileSync, writeFileSync, copyFileSync, rmSync, renameSync, mkdirSync, appendFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 
 const HOME = homedir();
-// Respect a non-default bun location (official installer sets BUN_INSTALL);
-// fall back to the default ~/.bun layout. Bun's global install dir always
-// lives under $BUN_INSTALL, so BUNDLE and BIN_DIR follow the same base.
-const BUN_INSTALL = process.env.BUN_INSTALL || join(HOME, ".bun");
-const BUNDLE = join(BUN_INSTALL, "install", "global", "node_modules", "@oh-my-pi", "pi-coding-agent", "dist", "cli.js");
-const ORIG = BUNDLE + ".orig";
-const BIN_DIR = join(BUN_INSTALL, "bin");
-const BUN_EXE = join(BIN_DIR, "bun.exe");
-const WRAPPER = join(BIN_DIR, "omp.cmd");
 const PATCH_SCRIPT = join(HOME, ".omp", "omp-cny-patch.mjs");
 const LOG_FILE = join(HOME, ".omp", "logs", "omp-cny-patch.log");
+const COST_CFG = join(HOME, ".omp", "agent", "cost.json");
 
-/**
- * Resolve bun.exe: $BUN_INSTALL/bin/bun.exe, then default ~/.bun/bin/bun.exe,
- * then `where bun` on PATH (winget/scoop/npm/portable installs). Only an .exe
- * match is accepted — invoking a .cmd shim from inside a batch file without
- * `call` would swallow the rest of the wrapper.
- */
-let _bunExe = null;
-function resolveBunExe() {
-	if (_bunExe) return _bunExe;
-	if (existsSync(BUN_EXE)) return (_bunExe = BUN_EXE);
+// Defaults used when cost.json is missing or unreadable (also repo defaults).
+const DEFAULT_RATE = 7.25;
+const DEFAULT_FREE = ["volcengine-coding"];
+
+let _ompExe = null;
+function resolveOmpExe() {
+	if (_ompExe) return _ompExe;
+	if (process.env.CNY_PATCH_TARGET && existsSync(process.env.CNY_PATCH_TARGET)) {
+		return (_ompExe = process.env.CNY_PATCH_TARGET);
+	}
+	const cands = [];
+	if (process.env.BUN_INSTALL) cands.push(join(process.env.BUN_INSTALL, "bin", "omp.exe"));
+	cands.push(join(HOME, ".bun", "bin", "omp.exe"));
+	for (const c of cands) {
+		if (existsSync(c)) return (_ompExe = c);
+	}
 	try {
-		const out = execFileSync("where.exe", ["bun"], { encoding: "utf8" });
+		const out = execFileSync("where.exe", ["omp"], { encoding: "utf8" });
 		const exe = out
 			.split(/\r?\n/)
 			.map((s) => s.trim())
-			.find((s) => s && /\.exe$/i.test(s));
-		if (exe && existsSync(exe)) return (_bunExe = exe);
+			.find((s) => s && /omp\.exe$/i.test(s));
+		if (exe && existsSync(exe)) return (_ompExe = exe);
 	} catch {}
 	fail(
-		`bun.exe not found: tried ${BUN_EXE}, then \`where bun\` on PATH. ` +
-			"Install bun via the official installer (https://bun.sh) or set BUN_INSTALL to its location."
+		`omp.exe not found: tried ${cands.join(", ")}, then \`where omp\`. ` +
+			"Install omp 18.x (standalone binary) first — this patch targets the native exe, not the 17.x bun package."
 	);
 }
-
-/** Injected import + helpers. `__cnyCfgCache` caches the parsed config. */
-const HELPERS = `import{readFileSync as __cnyRead}from"node:fs";
-var __cnyCfgCache=void 0;
-function __cnyCfg(){if(__cnyCfgCache!==void 0)return __cnyCfgCache;var b=process.env.PI_CODING_AGENT_DIR;var base=b?b:((process.env.USERPROFILE||process.env.HOME||"")+"/.omp/agent");var c=null;try{var t=__cnyRead(base+"/cost.json","utf8");c=JSON.parse(t)}catch(e){c=null}__cnyCfgCache=c;return c}
-function __cnyFmt(v,c){var s=c&&c.symbol?c.symbol:"$";if(v===0)return s+"0";if(v<0.01)return s+v.toFixed(4);if(v<1)return s+v.toFixed(3);return s+v.toFixed(2)}function __cnyPeak(){var d=new Date(),h=(d.getUTCHours()+8)%24,w=d.getUTCDay();return w>=1&&w<=5&&(h>=9&&h<12||h>=14&&h<18)}function __cnyShow(n){var c=__cnyCfg(),q=n&&n.session,sm=q&&q.state&&q.state.model;if(!c||!sm)return null;var fp=c.freeProviders||[];return sm.provider&&fp.indexOf(sm.provider)>=0}function __cnyAdvisor(n){var c=__cnyCfg(),q=n&&n.session;if(!c||!q)return null;var st=q.getAdvisorStats&&q.getAdvisorStats();var mp=st&&st.model?st.model.provider:null;var fp=c.freeProviders||[];if(mp&&fp.indexOf(mp)>=0)return "coding plan";var h=q.getAdvisorCost&&q.getAdvisorCost()||0;var r=c&&typeof c.rate==="number"?c.rate:1;return __cnyFmt(h*r,c)}function __cnyCalc(n){var c=__cnyCfg(),q=n&&n.session,sm=q&&q.state&&q.state.model;if(!c||!q)return null;var fp=c.freeProviders||[];if(sm&&sm.provider&&fp.indexOf(sm.provider)>=0)return "coding plan";var cur=sm&&sm.provider&&sm.id?(sm.provider+"/"+sm.id):null;var total=0;var r=typeof c.rate==="number"?c.rate:1;var mo=c.models||{};var br=q.sessionManager&&q.sessionManager.getBranch?q.sessionManager.getBranch():null;if(br)for(var e of br){if(e&&e.type==="model_change"&&typeof e.model==="string"){cur=e.model}else if(e&&e.type==="message"&&e.message&&e.message.role==="assistant"){var u=e.message.usage;if(!u)continue;var k=cur?cur.replace("/",":"):"";var pr=mo[k]||mo[cur]||null;if(pr){var pz=pr.peak?(__cnyPeak()?pr.peak:pr.offpeak||pr):pr;total+=(u.input||0)/1e6*(pz.input||0)+(u.cacheRead||0)/1e6*(pz.cacheRead||0)+(u.cacheWrite||0)/1e6*(pz.cacheWrite||0)+(u.output||0)/1e6*(pz.output||0)}else{total+=(u.cost&&u.cost.total?u.cost.total:0)*r}}}return __cnyFmt(total,c)}`;
 
 function log(msg) {
 	try {
@@ -138,240 +108,233 @@ function fail(msg) {
 	process.exit(1);
 }
 
-/**
- * Locate the cost status segment: `{id:"cost",render(n){...}}},`.
- * Bounded by the stable `id:"cost",render(` anchor and the `statusLineCost`
- * render tail — both survive minification; inner var names do not.
- */
-function findCostSegment(src) {
-	const i0 = src.indexOf('id:"cost",render(');
-	if (i0 === -1) return null;
-	const sc = src.indexOf("statusLineCost", i0);
-	if (sc === -1) return null;
-	const end = src.indexOf("}}},", sc);
-	if (end === -1) return null;
-	return [i0, end + 4];
-}
-
-/**
- * The CLI bootstrap exits when `Bun.semver.order(Bun.version, <min>) < 0`, where
- * `<min>` comes from the embedded package.json engines (currently >=1.3.14). Bun
- * 1.3.14 has a known segfault regression (top-level `await` resuming under an
- * active AsyncLocalStorage/OpenTelemetry context — type confusion; fixed on bun
- * main, unreleased as of 2026-08-07; 1.3.13 is clean), so the machine runs bun
- * 1.3.13 and this check is replaced with `!1` (dead code). The regex anchors on
- * the stable API call shape — inner minified var names may drift. Non-fatal: if
- * the pattern ever drifts out of recognition, the CNY patch still applies and
- * omp keeps its own floor.
- */
-const VERSION_CHECK_RE = /Bun\.semver\.order\(Bun\.version,[A-Za-z_$][\w$]*\)<0/;
-const MIN_BUN_VERSION = "1.3.13"; // omp's floor pins >=1.3.14 (segfault-prone) — see header; 1.3.13 is the clean target
-function hasVersionCheckBypass(src) {
-	return !VERSION_CHECK_RE.test(src);
-}
-
-/** Parse a semver-ish version string to a comparable tuple. */
-function versionTuple(v) {
-	const m = /^(\d+)\.(\d+)\.(\d+)/.exec(String(v || "").trim());
-	if (!m) return null;
-	return [Number(m[1]), Number(m[2]), Number(m[3])];
-}
-
-/** Compare version tuples; returns <0, 0, >0. */
-function compareVersions(a, b) {
-	for (let i = 0; i < 3; i++) {
-		if (a[i] !== b[i]) return a[i] - b[i];
-	}
-	return 0;
-}
-
-/** Resolve the actual bun version via the resolved bun.exe. */
-function getBunVersion() {
-	const bun = resolveBunExe();
-	let v = null;
+/** Read rate + freeProviders from cost.json; fall back to defaults. */
+function loadCostCfg() {
 	try {
-		v = execFileSync(bun, ["--version"], { encoding: "utf8" }).trim();
-	} catch (e) {
-		log(`WARN: cannot read bun version from ${bun} (${e.code || e.message})`);
-		return null;
+		const cfg = JSON.parse(readFileSync(COST_CFG, "utf8"));
+		const rate = typeof cfg.rate === "number" && cfg.rate > 0 ? cfg.rate : DEFAULT_RATE;
+		const free = Array.isArray(cfg.freeProviders) && cfg.freeProviders.length > 0 ? cfg.freeProviders : DEFAULT_FREE;
+		return { rate, free };
+	} catch {
+		return { rate: DEFAULT_RATE, free: DEFAULT_FREE };
 	}
-	return versionTuple(v);
 }
 
-function patchBundle() {
-	if (!existsSync(BUNDLE)) fail(`bundle not found: ${BUNDLE}`);
-	let src = readFileSync(BUNDLE, "utf8");
-	let pristine = false;
+/**
+ * Same-length replacement body for `Rno()`. `e` = USD cost, `t` = isOAuth,
+ * `s` = theme. Emits `¥<usd×rate>`; nerd preset keeps the subscription icon.
+ */
+function buildRnoReplacement(rate) {
+	// rate is baked in at patch time. rate 7.25 -> "7.25" (4 chars).
+	// Keep the body ≤ target length; the caller pads to byte-exact length.
+	const r = String(rate);
+	const body =
+		"function Rno(e,t,s){const n=(e*" + r + ").toFixed(2);\n" +
+		"if(!t)return`\\u00a5${n}`;\n" +
+		"if(s.getSymbolPreset()===\"nerd\"){\n" +
+		"const o=s.icon.subscription;\n" +
+		"return o?`${o} ${n}`:`\\u00a5${n}`}\n" +
+		"return`\\u00a5${n}`}\n";
+	return Buffer.from(body, "utf8");
+}
 
-	const preSeg = findCostSegment(src);
-	// render param is the status-line node (has .session); the inner `cost:n`
-	// destructure rebinds `n` to a NUMBER in current omp, so helpers must be
-	// called with the render arg, not with `n`. Extract it dynamically so the
-	// injection survives minifier renames.
-	const rp = /id:"cost",render\(([A-Za-z_$][\w$]*)\)/.exec(src);
-	const renderParam = rp ? rp[1] : null;
-	if (!renderParam) fail('cost render param not found — bundle structure changed; patch needs updating');
-	if (src.includes("__cnyCfg")) {
-		const pre = preSeg ? src.slice(preSeg[0], preSeg[1]) : "";
-		const ADVISOR_OK = new RegExp(
-			'if\\(!__cnyShow\\(' + renderParam + '\\)&&[A-Za-z_$][\\w$]*\\).*\\$\\{__cnyAdvisor\\(' + renderParam + '\\)\\}'
-		).test(pre);
-		if (
-			preSeg &&
-			ADVISOR_OK &&
-			pre.includes(`__cnyCalc(${renderParam})`) &&
-			pre.includes(`__cnyShow(${renderParam})`) &&
-			src.includes("q=n&&n.session") &&
-			src.includes("__cnyPeak(){var d=new Date(),h=(d.getUTCHours()+8)%24,w=d.getUTCDay()") &&
-			hasVersionCheckBypass(src)
-		) {
-			log("already patched — nothing to do");
-			return false;
-		}
-		log("stale patch detected — restoring pristine bundle from .orig, re-patching");
-		if (!existsSync(ORIG)) fail("stale patch detected but no .orig backup to restore from");
-		src = readFileSync(ORIG, "utf8");
-	} else {
-		pristine = true;
+/**
+ * Same-length replacement for the `context_pct` segment (xaa). Drops the
+ * `xx.x%/window` double figure — only the usage percent stays, plus the
+ * auto-compact spinner. The percent is an integer right-aligned to a fixed
+ * 4-column field (`  0%`..`100%`), so the segment never changes width.
+ */
+function buildContextReplacement() {
+	const body =
+		'xaa = {\n' +
+		'    id: "context_pct",\n' +
+		'    render(e) {\n' +
+		"      const t = e.contextPercent;\n" +
+		"      const n = kNe(bNe(t ?? 0, e.contextWindow));\n" +
+		'      let o = "";\n' +
+		"      if (e.autoCompactEnabled && k.icon.auto) {\n" +
+		"        const a = e.compactionSpeculation;\n" +
+		'        const l = a === "running" ? e.speculationBlinkOn ? "accent" : "muted" : a === "armed" ? "accent" : n;\n' +
+		"        o = ` ${k.fg(l, k.icon.auto)}`;\n" +
+		"      }\n" +
+		'      const r = k.fg(n, `${String(Math.round(t ?? 0)).padStart(3)}%`);\n' +
+		"      const i = vc(k.icon.context, r + o);\n" +
+		"      return { content: i, visible: true };\n" +
+		"    }\n" +
+		"  };\n";
+	return Buffer.from(body, "utf8");
+}
+
+/**
+ * Same-length replacement for the `id:"cost"` segment (Saa). Adds a
+ * freeProviders check so subscription providers show "coding plan".
+ * `free` is baked in as a JS array literal.
+ */
+function buildSegmentReplacement(free) {
+	const list = "[" + free.map((p) => JSON.stringify(p)).join(",") + "]";
+	// The fp expression: r.model?.provider is one of the free providers.
+	// list len varies; build the check expression accordingly.
+	// For a single provider (common case) use ===; for multiple use indexOf.
+	const fpExpr =
+		free.length === 1
+			? 'r.model?.provider==="' + free[0] + '"'
+			: list + '.indexOf(r.model?.provider)>=0';
+	const lines = [
+		"Saa = {",
+		'    id: "cost",',
+		'    render(e) {',
+		"      const { cost: t, premiumRequests: s } = e.usageStats;",
+		"      const n = e.session.getAdvisorCost?.() ?? 0;",
+		"      const o = iaa(s);",
+		"      const r = e.session.state;",
+		"      const i = r.model ? e.session.modelRegistry?.isUsingOAuth(r.model) ?? false : false;",
+		"      const a = e.session.isAdvisorUsingSubscription?.() ?? false;",
+		"      const fp = " + fpExpr + ";",
+		'      if (!t && !n && !i && !o && !fp) return { content: "", visible: false };',
+		"      const l = [];",
+		'      if (fp) l.push("coding plan");',
+		"      else if (t) l.push(Rno(t, i, k));",
+		'      else if (i) l.push(k.getSymbolPreset() === "nerd" && k.icon.subscription ? k.icon.subscription : "(sub)");',
+		"      if (o) l.push(`\\u2605 ${Pe(o)}`);",
+		'      if (n && !fp) l.push((l.length?"+ ":"")+aaa(n, a, k));',
+		'      if (l.length === 0) return { content: "", visible: false };',
+		'      return { content: k.fg("statusLineCost", l.join(" ")), visible: true };',
+		"    }",
+		"  };",
+		"  ",
+	].join("\n");
+	// Compact: reduce 6-space indents to 4 where needed so the body fits the
+	// 969-byte slot (padTo tops it up to the exact byte length).
+	let text = lines;
+	while (Buffer.byteLength(text, "utf8") > 969) {
+		const rep = text.replace(/\n      (?=\S)/, "\n    ");
+		if (rep === text) break;
+		text = rep;
 	}
+	return Buffer.from(text, "utf8");
+}
 
-	if (!src.includes("__cnyCfg")) {
-		const at = src.indexOf("// @bun");
-		if (at === -1) fail("unexpected bundle head (marker `// @bun` missing)");
-		const nl = src.indexOf("\n", at);
-		const injectAt = nl === -1 ? src.length : nl + 1;
-		src = src.slice(0, injectAt) + HELPERS + src.slice(injectAt);
+/** Pad `buf` to exactly `target` bytes with a trailing `/* ... *​/` comment. */
+function padTo(buf, target) {
+	if (buf.length === target) return buf;
+	if (buf.length > target) fail(`replacement too large (${buf.length} > ${target}) — patch needs updating`);
+	const under = target - buf.length;
+	if (under < 4) fail(`no room to pad replacement (${buf.length} vs ${target})`);
+	// insert the padding comment right before the final newline
+	const lastNl = buf.lastIndexOf(10 /* \n */);
+	if (lastNl === -1) fail("replacement has no trailing newline — cannot pad");
+	const prefix = buf.subarray(0, lastNl);
+	const comment = Buffer.from("/*" + " ".repeat(under - 4) + "*/" + "\n", "utf8");
+	const padded = Buffer.concat([prefix, comment]);
+	if (padded.length !== target) fail(`pad mismatch (${padded.length} vs ${target})`);
+	return padded;
+}
+
+/** True if the exe already carries the CNY patch markers. */
+function isPatched(buf) {
+	// Rno patched: has the CNY body.
+	const rnoMark =
+		buf.indexOf(Buffer.from("const n=(e*7.25).toFixed(2);", "utf8")) !== -1 ||
+		buf.indexOf(Buffer.from("(e*7.25).toFixed(2)", "utf8")) !== -1;
+	// context_pct patched: fixed-width percent-only body.
+	const ctxMark =
+		buf.indexOf(Buffer.from("String(Math.round(t ?? 0)).padStart(3)}%`", "utf8")) !== -1;
+	return rnoMark && ctxMark;
+}
+
+function patchOmpExe(ompExe) {
+	let buf = readFileSync(ompExe);
+	if (isPatched(buf)) {
+		log(`already patched — nothing to do (${ompExe})`);
+		return false;
 	}
+	const pristineSize = buf.length;
+	ensureBackup(ompExe);
 
-	const seg = findCostSegment(src);
-	if (!seg) fail('cost segment not found — bundle structure changed; patch needs updating');
-	const [i0, i1] = seg;
-	let s = src.slice(i0, i1);
+	const { rate, free } = loadCostCfg();
+	log(`cost config: rate=${rate} freeProviders=[${free.join(", ")}]`);
 
-	// gate bypass for coding plan providers (keep status line visible even with no cost)
-	const gateRe = /if\(!([A-Za-z_$][\w$]*)&&!([A-Za-z_$][\w$]*)&&!([A-Za-z_$][\w$]*)&&!([A-Za-z_$][\w$]*)\)return\{content:"",visible:!1\}/;
-	if (!gateRe.test(s)) fail('cost visibility gate pattern not matched — version drift');
-	s = s.replace(gateRe, `if(!$1&&!$2&&!$3&&!$4&&!__cnyShow(${renderParam}))return{content:"",visible:!1}`);
+	// --- Patch 1: Rno (¥ formatter) ---
+	const rnoAnchor = Buffer.from("function Rno(e, t, s) {");
+	const aaaAnchor = Buffer.from("function aaa(e, t, s) {");
+	const ri = buf.indexOf(rnoAnchor);
+	const ai = ri === -1 ? -1 : buf.indexOf(aaaAnchor, ri);
+	if (ri === -1 || ai === -1) fail("Rno anchor not found — 18.x bundle drifted; patch needs updating");
+	const rnoOrig = buf.subarray(ri, ai);
+	const rnoRepl = padTo(buildRnoReplacement(rate), rnoOrig.length);
+	buf = Buffer.concat([buf.subarray(0, ri), rnoRepl, buf.subarray(ai)]);
+	log(`patched Rno() cost formatter (${rnoOrig.length} bytes, same-length)`);
 
-	// usage cost push — coding plan shows text, else token-based CNY or USD fallback
-	const usageRe = /if\(([A-Za-z_$][\w$]*)\)([A-Za-z_$][\w$]*)\.push\(`\$\$\{([A-Za-z_$][\w$]*)\.toFixed\(2\)\}`\);/;
-	const um = s.match(usageRe);
-	if (!um) fail('usage cost push pattern not matched — version drift');
-	s = s.replace(usageRe, (_m, g1, g2, g3) =>
-		`if(__cnyShow(${renderParam})){` + g2 + '.push("coding plan")}else{let __c=__cnyCalc(' + renderParam + ');' + g2 + '.push(__c?__c:`$${' + g3 + '.toFixed(2)}`)}'
-	);
+	// --- Patch 2: cost segment (Saa) freeProviders ---
+	const sa = buf.indexOf(Buffer.from("Saa = {"));
+	const xa = sa === -1 ? -1 : buf.indexOf(Buffer.from("xaa = {"));
+	if (sa === -1 || xa === -1) fail("cost segment (Saa) not found — 18.x bundle drifted; patch needs updating");
+	const segOrig = buf.subarray(sa, xa);
+	const segRepl = padTo(buildSegmentReplacement(free), segOrig.length);
+	buf = Buffer.concat([buf.subarray(0, sa), segRepl, buf.subarray(xa)]);
+	log(`patched cost segment (Saa) (${segOrig.length} bytes, same-length)`);
 
-	// advisor push — only for paid (non-coding-plan) providers; coding plan
-	// shows just "coding plan" with no " + ¥x (adv)" tail
-	const arr = um[2];
-	const advRe = new RegExp(
-		'if\\(([A-Za-z_$][\\w$]*)\\)' + arr + '\\.push\\(`\\$\\{' + arr + '\\.length\\?"\\+ ":""\\}\\$\\$\\{([A-Za-z_$][\\w$]*)\\.toFixed\\(2\\)\\} \\(adv\\)`\\);'
-	);
-	const am = s.match(advRe);
-	if (!am) fail('advisor push pattern not matched — version drift');
-	s = s.replace(advRe, (_m, p1, p2) => 'if(!__cnyShow(' + renderParam + ')&&' + p1 + ')' + arr + '.push(`${' + arr + '.length?"+ ":""}${__cnyAdvisor(' + renderParam + ')} (adv)`);');
+	// --- Patch 3: context_pct segment (xaa) — fixed-width percent ---
+	const xc = buf.indexOf(Buffer.from("xaa = {"));
+	const ec = xc === -1 ? -1 : buf.indexOf(Buffer.from("Eaa = {"));
+	if (xc === -1 || ec === -1) fail("context_pct segment (xaa) not found — 18.x bundle drifted; patch needs updating");
+	const ctxOrig = buf.subarray(xc, ec);
+	const ctxRepl = padTo(buildContextReplacement(), ctxOrig.length);
+	buf = Buffer.concat([buf.subarray(0, xc), ctxRepl, buf.subarray(ec)]);
+	log(`patched context_pct segment (xaa) (${ctxOrig.length} bytes, same-length)`);
 
-	if (pristine) {
-		copyFileSync(BUNDLE, ORIG);
-		log(`refreshed pristine backup ${ORIG}`);
-	}
-
-	let out = src.slice(0, i0) + s + src.slice(i1);
-	// bun-version floor check bypass — see VERSION_CHECK_RE note. Before
-	// disabling omp's floor check we verify the actual bun runtime is at least
-	// MIN_BUN_VERSION. If it's older, we refuse to disable the check (leaving
-	// omp's own floor intact so it rejects a too-old bun instead of crashing)
-	// and abort. Non-fatal for the CNY patch itself on acceptable versions.
-	if (VERSION_CHECK_RE.test(out)) {
-		const bunVer = getBunVersion();
-		const min = versionTuple(MIN_BUN_VERSION);
-		if (bunVer && compareVersions(bunVer, min) < 0) {
-			// Abort BEFORE setupWrapper (which would delete the bun shim) and
-			// before writing the bundle, so omp's own floor check stays intact
-			// and rejects the too-old bun cleanly instead of crashing.
-			fail(`bun ${bunVer.join(".")} is older than ${MIN_BUN_VERSION} — omp requires >=1.3.14. Upgrade bun (irm bun.sh/install.ps1 | iex) then re-run`);
-		}
-		out = out.replace(VERSION_CHECK_RE, "!1");
-		log(`disabled bun runtime version floor check (bun ${bunVer ? bunVer.join(".") : "?"} >= ${MIN_BUN_VERSION})`);
-	} else if (!hasVersionCheckBypass(out)) {
-		log("WARN: bun version check pattern not found — leaving omp's own floor intact");
-	}
-	if (
-		out.split('id:"cost",render(').length !== 2 ||
-		!out.includes(`__cnyCalc(${renderParam})`) ||
-		!out.includes(`__cnyShow(${renderParam})`) ||
-		!out.includes(`__cnyAdvisor(${renderParam})`)
-	) {
-		fail("sanity check failed after patching — bundle left unchanged, please report");
-	}
-	writeFileSync(BUNDLE, out, "utf8");
-	log(`patched ${BUNDLE} (${statSync(BUNDLE).size} bytes)`);
+	if (buf.length !== pristineSize) fail("size changed after patch — aborting (must be same-length)");
+	replaceExe(ompExe, buf);
+	log(`patched ${ompExe} (${buf.length} bytes)`);
 	return true;
 }
 
 /**
- * Remove bun-generated shims (`omp.exe` / `omp.pi.exe`) that would shadow the
- * .cmd wrapper, since PATHEXT resolves .EXE before .CMD.
- *
- * bun-installed omp: the shim IS the running process image. Windows refuses to
- * delete a running executable (EACCES/EPERM) but allows renaming it — so on a
- * delete failure we rename the shim aside (`omp.exe.disabled[.N]`) and let the
- * wrapper take over; the leftover is swept on a later run once the old process
- * has exited and the lock is gone.
+ * Replace omp.exe on Windows even while it is running. A running exe cannot be
+ * opened for writing (EBUSY), but NTFS allows RENAMING a running image aside.
+ * So: stage the patched bytes at `omp.exe.cny` (never locked), then swap:
+ *   rename(current running exe -> .cny.old)   // rename of a running image works
+ *   rename(.cny -> exe)                        // fresh name, not locked
+ * If the exe is NOT currently locked, this still works via the same path.
  */
-function removeShims() {
-	if (!existsSync(BIN_DIR)) return;
+function replaceExe(ompExe, bytes) {
+	const staged = ompExe + ".cny";
+	const old = ompExe + ".cny.old";
+	writeFileSync(staged, bytes); // stage; staged name is never a running image
 
-	let entries;
-	try {
-		entries = readdirSync(BIN_DIR);
-	} catch (e) {
-		// Directory vanished/unreadable mid-flight (fresh-machine edge: the dir
-		// can be a junction or be recreated by an installer concurrently) — skip
-		// shim removal rather than abort the whole setup.
-		log(`WARN: cannot list ${BIN_DIR} (${e.code || e.message}) — shim removal skipped; the .cmd wrapper may stay shadowed until the next --setup`);
-		return;
-	}
+	// best-effort clean of a previous failed swap
+	try { if (existsSync(old)) rmSync(old); } catch {}
 
-	// Sweep stale `.disabled*` leftovers from earlier in-use renames —
-	// independent of whether a live shim is present. Best-effort: a copy
-	// still mapped by a running omp process cannot be deleted (EACCES) and is
-	// skipped; it will be swept on a later run once that process exits.
-	for (const s of entries) {
-		if (/^omp\.(exe|pi\.exe)\.disabled/i.test(s)) {
-			try {
-				rmSync(join(BIN_DIR, s));
-				log(`removed stale shim copy ${join(BIN_DIR, s)}`);
-			} catch {}
-		}
-	}
+	// swap: move current exe aside, then move staged into place
+	renameSync(ompExe, old); // works even if omp.exe is currently running
+	renameSync(staged, ompExe);
+	try { if (existsSync(old)) rmSync(old); } catch {}
+}
 
-	for (const f of entries) {
-		if (!/^omp\.(exe|pi\.exe)$/i.test(f)) continue;
-		const p = join(BIN_DIR, f);
-
-		try {
-			rmSync(p);
-			log(`removed bun shim ${p} (would shadow the .cmd wrapper)`);
-		} catch (e) {
-			// Shim is locked by a running omp process — rename it aside instead.
-			let target = p + ".disabled";
-			for (let i = 1; existsSync(target); i++) target = `${p}.disabled.${i}`;
-			try {
-				renameSync(p, target);
-				log(`shim ${p} is in use by a running omp — renamed to ${target}; will be swept after omp exits`);
-			} catch (e2) {
-				log(`WARN: cannot remove or rename shim ${p} (${e2.code || e2.message}); the .cmd wrapper stays shadowed until omp exits — re-run setup after closing omp`);
-			}
-		}
+function ensureBackup(ompExe) {
+	const orig = ompExe + ".orig";
+	if (!existsSync(orig)) {
+		copyFileSync(ompExe, orig);
+		log(`pristine backup saved → ${orig}`);
 	}
 }
 
-/**
- * The wrapper calls back into this script by absolute path, so setup must make
- * sure the script lives at PATCH_SCRIPT — even when run straight from a repo
- * checkout (fresh-machine deploy). Idempotent: skips when already identical.
- */
+function restore(ompExe) {
+	const orig = ompExe + ".orig";
+	if (!existsSync(orig)) {
+		log(`no pristine backup (${orig}) — nothing to restore`);
+		return;
+	}
+	const pristine = readFileSync(orig);
+	if (pristine.length !== readFileSync(ompExe).length && !isPatched(readFileSync(ompExe))) {
+		log("WARN: current omp.exe differs from backup and is not patched — leaving as-is (likely an omp upgrade)");
+		return;
+	}
+	replaceExe(ompExe, pristine);
+	log(`restored pristine ${ompExe} from ${orig}`);
+}
+
+/** Self-install to ~/.omp/omp-cny-patch.mjs (setup runs from a repo checkout). */
 function ensureSelfInstalled() {
 	const here = process.argv[1];
 	if (!here || here === PATCH_SCRIPT) return;
@@ -385,48 +348,24 @@ function ensureSelfInstalled() {
 	}
 }
 
-function setupWrapper() {
-	// Validate everything the wrapper depends on BEFORE removing the shims —
-	// a failed resolve must not leave the machine without any `omp` entry.
-	ensureSelfInstalled();
-	const bun = resolveBunExe().replaceAll("/", "\\");
-	removeShims();
-	const body =
-		"@echo off\r\n" +
-		`"${bun}" "${PATCH_SCRIPT.replaceAll("/", "\\")}" --check >nul 2>&1\r\n` +
-		`"${bun}" "${BUNDLE.replaceAll("/", "\\")}" %*\r\n`;
-	writeFileSync(WRAPPER, body, "utf8");
-	log(`wrapper ready: ${WRAPPER}`);
-}
-
-function restore() {
-	if (existsSync(WRAPPER)) {
-		rmSync(WRAPPER);
-		log(`removed wrapper ${WRAPPER}`);
+/** Best-effort sweep of leftover swap artifacts (a previous swap's `.cny.old`,
+ *  locked by a still-running omp, is skipped until that process exits). */
+function sweepStale(ompExe) {
+	for (const f of [ompExe + ".cny.old", ompExe + ".cny"]) {
+		try {
+			if (existsSync(f)) rmSync(f);
+		} catch {}
 	}
-	if (existsSync(ORIG)) {
-		copyFileSync(ORIG, BUNDLE);
-		log(`restored pristine bundle ${BUNDLE}`);
-	}
-	// Sweep `.disabled*` shim leftovers so a later `bun install -g` recreates a
-	// clean shim; a copy still mapped by a running omp process stays locked
-	// (EACCES) and is skipped — it will be swept by the next --setup.
-	if (existsSync(BIN_DIR)) {
-		for (const f of readdirSync(BIN_DIR)) {
-			if (/^omp\.(exe|pi\.exe)\.disabled/i.test(f)) {
-				try {
-					rmSync(join(BIN_DIR, f));
-					log(`removed stale shim copy ${join(BIN_DIR, f)}`);
-				} catch {}
-			}
-		}
-	}
-	log("restore done — run `bun install -g @oh-my-pi/pi-coding-agent` to recreate the omp shim");
 }
 
 const arg = process.argv[2];
-if (arg === "--restore") restore();
-else {
-	patchBundle();
-	setupWrapper();
+const ompExe = resolveOmpExe();
+
+if (arg === "--restore") {
+	restore(ompExe);
+} else {
+	ensureSelfInstalled();
+	sweepStale(ompExe);
+	ensureBackup(ompExe);
+	patchOmpExe(ompExe);
 }

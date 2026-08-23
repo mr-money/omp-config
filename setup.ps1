@@ -1,6 +1,6 @@
 # omp-config 一键部署脚本 (Windows / PowerShell 5.1+)
 # 用法：仓库根目录运行 .\setup.ps1
-# 前置：已安装 bun；已安装 omp (`bun install -g @oh-my-pi/pi-coding-agent`)
+# 前置：已安装 bun；已安装 omp 18.x（原生 exe，`irm https://omp.sh/install.ps1 | iex`）
 # 行为：探测本机路径 -> 复制配置 -> 填 API Key -> 跑 patch --setup
 
 $ErrorActionPreference = "Stop"
@@ -31,15 +31,21 @@ if (-not $bun) {
 }
 Write-OK "bun $(& bun --version) @ $($bun.Source)"
 
-# 检查 omp bundle（可能在 BUN_INSTALL 或默认 ~/.bun）
+# 检查 omp 可执行文件（18.x 起为原生 exe，不再是 bun 全局包）
 $bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $env:USERPROFILE ".bun" }
-$bundle = Join-Path $bunInstall "install\global\node_modules\@oh-my-pi\pi-coding-agent\dist\cli.js"
-if (-not (Test-Path $bundle)) {
-    Write-Fail "未找到 omp bundle: $bundle"
-    Write-Fail "请先运行: bun install -g @oh-my-pi/pi-coding-agent"
+$ompExe = Join-Path $bunInstall "bin\omp.exe"
+if (-not (Test-Path $ompExe)) {
+    $whereOmp = Get-Command omp -ErrorAction SilentlyContinue
+    if ($whereOmp -and $whereOmp.Source -match "omp\.exe$") {
+        $ompExe = $whereOmp.Source
+    }
+}
+if (-not (Test-Path $ompExe)) {
+    Write-Fail "未找到 omp 可执行文件: $ompExe"
+    Write-Fail "请先安装 omp 18.x（原生 exe），例如: irm https://omp.sh/install.ps1 | iex"
     exit 1
 }
-Write-OK "omp bundle: $bundle"
+Write-OK "omp 可执行文件: $ompExe"
 
 # 2. 确保目录存在
 New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
@@ -201,7 +207,7 @@ Write-Step "部署完成"
 Write-Host ""
 Write-Host "  omp 配置目录: $AgentDir"
 Write-Host "  patch 脚本:   $PatchScript"
-Write-Host "  omp bundle:   $bundle"
+Write-Host "  omp 可执行文件: $ompExe"
 Write-Host ""
 Write-Host "  启动: omp"
 Write-Host "  回滚: bun $PatchScript --restore"
