@@ -21,6 +21,14 @@ providers:
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens
+      - id: doubao-seed-2.1-turbo
+        name: Doubao Seed 2.1 Turbo
+        input: [text, image]
+        contextWindow: 256000
+        maxTokens: 256000
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
       - id: deepseek-v4-flash-ga-260731
         name: DeepSeek V4 Flash(ark)
         input: [text]

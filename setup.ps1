@@ -1,4 +1,4 @@
-﻿# omp-config 一键部署脚本 (Windows / PowerShell 5.1+)
+# omp-config 一键部署脚本 (Windows / PowerShell 5.1+)
 # 用法：仓库根目录运行 .\setup.ps1
 # 前置：已安装 bun；已安装 omp (`bun install -g @oh-my-pi/pi-coding-agent`)
 # 行为：探测本机路径 -> 复制配置 -> 填 API Key -> 跑 patch --setup
@@ -49,13 +49,17 @@ New-Item -ItemType Directory -Force -Path (Join-Path $AgentDir "skills") | Out-N
 Write-Step "复制 agent 配置"
 $srcModels = Join-Path $RepoRoot "agent\models.yml"
 $dstModels = Join-Path $AgentDir "models.yml"
-# 若目标 models.yml 已有真实 apiKey（非占位），跳过覆盖以保留
-$skipModels = $false
+# 若目标 models.yml 已有真实 apiKey（非占位），提取出来待复制后回填——
+# 不能跳过整个文件，否则新模型定义（glm-5.3 / doubao-seed-2.0-mini 等）永不部署
+$existingKey = $null
 if ((Test-Path $dstModels) -and (Test-Path $srcModels)) {
     $dstContent = [System.IO.File]::ReadAllText($dstModels)
     if ($dstContent -notmatch 'apiKey:\s*<YOUR_API_KEY>') {
-        $skipModels = $true
-        Write-OK "models.yml 已有 apiKey，跳过覆盖（保留现有配置）"
+        $km = [regex]::Match($dstContent, '(?m)^\s*apiKey:\s*(\S+)')
+        if ($km.Success) {
+            $existingKey = $km.Groups[1].Value
+            Write-OK "检测到 models.yml 已有 apiKey，部署后回填保留"
+        }
     }
 }
 
@@ -63,8 +67,16 @@ if ((Test-Path $dstModels) -and (Test-Path $srcModels)) {
 Get-ChildItem (Join-Path $RepoRoot "agent") -Exclude "models.yml" | ForEach-Object {
     Copy-Item -Force -Recurse $_.FullName -Destination $AgentDir
 }
-if (-not $skipModels) {
-    Copy-Item -Force $srcModels -Destination $dstModels
+# models.yml 始终用仓库最新定义；若原有真实 key，复制后回填
+Copy-Item -Force $srcModels -Destination $dstModels
+if ($existingKey) {
+    $yml = [System.IO.File]::ReadAllText($dstModels)
+    $key = $existingKey
+    # MatchEvaluator 插入字面值（防 key 含 $ 被当回引用）
+    $yml = [regex]::Replace($yml, 'apiKey:\s*<YOUR_API_KEY>',
+        { param($m) "apiKey: $key" })
+    Write-Utf8Text $dstModels $yml
+    Write-OK "已回填原 apiKey 到最新 models.yml"
 }
 Write-OK "agent/ -> ~/.omp/agent/"
 

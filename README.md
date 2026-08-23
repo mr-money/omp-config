@@ -111,7 +111,8 @@ statusLine:
 内置火山引擎大模型 API（方舟，coding plan 订阅制）：
 - **deepseek-v4-flash-ga-260731** — 默认模型（1M 上下文）
 - **glm-5.3** — 规划 / 慢速深度推理（1M 上下文）
-- **doubao-seed-2.0-mini** — 轻量 / 顾问 / 视觉 / commit 模型
+- **doubao-seed-2.0-mini** — 轻量 / 视觉 / commit 模型
+- **doubao-seed-2.1-turbo** — 顾问 / 设计（advisor、designer 角色）
 
 `apiKey` 部署时由 `setup.ps1` 交互填入（或通过 `OMP_API_KEY` 环境变量），仓库中保持 `<YOUR_API_KEY>` 占位脱敏。
 
