@@ -122,6 +122,8 @@ statusLine:
 
 - **`freeProviders: ["volcengine-coding"]`** — 火山引擎 coding plan 为订阅制，状态栏显示 `coding plan`，不计 token 费用、不显示顾问尾巴
 - **DeepSeek 官方 API** — 按量付费，人民币计价（汇率 7.25），执行峰谷定价（北京时间**周一至周五**高峰 09:00-12:00、14:00-18:00，周末与其余时段为空闲；状态栏按当前时刻自动选用对应价格）：
+  - 定价来源：[DeepSeek 官方定价页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)（价格如有变动，以此页为准）
+  - 覆盖模型：`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro`
   - V4 Flash / V4 Flash Vision（元/百万 tokens）：
     | 项目 | 空闲时段 | 高峰时段 |
     |------|---------|---------|
