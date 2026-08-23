@@ -24,7 +24,7 @@
  *     "freeProviders": ["volcengine-coding"],   // subscription providers: always show "coding plan" text, skip token pricing
  *     "models": {
  *       "deepseek:deepseek-chat": { "input": 1, "output": 2, "cacheRead": 0.1, "cacheWrite": 1 }
- *       // or peak/offpeak sub-objects (DeepSeek 峰谷定价, Beijing time; peak 09:00-12:00 & 14:00-18:00):
+ *       // or peak/offpeak sub-objects (DeepSeek 峰谷定价, Beijing time; weekdays peak 09:00-12:00 & 14:00-18:00):
  *       // "deepseek:deepseek-v4-flash": {
  *       //   "peak":   { "input": 3.0, "output": 9.0, "cacheRead": 0.1,  "cacheWrite": 3.0 },
  *       //   "offpeak":{" input": 1.5, "output": 4.5, "cacheRead": 0.05, "cacheWrite": 1.5 }
@@ -34,7 +34,8 @@
  *
  * Keys accept "provider:model" (colon) or "provider/model" (slash).
  * A model entry with `peak`/`offpeak` sub-objects is priced by the current
- * Beijing peak window (09:00-12:00, 14:00-18:00); a flat entry applies always.
+ * Beijing peak window (weekdays 09:00-12:00, 14:00-18:00; weekends are always
+ * off-peak per api-docs.deepseek.com pricing note); a flat entry applies always.
  * Per message:
  * 1. exact per-model CNY price from `models` -> token-based CNY total
  * 2. else provider-computed USD cost (usage.cost.total) x rate
@@ -122,7 +123,7 @@ function resolveBunExe() {
 const HELPERS = `import{readFileSync as __cnyRead}from"node:fs";
 var __cnyCfgCache=void 0;
 function __cnyCfg(){if(__cnyCfgCache!==void 0)return __cnyCfgCache;var b=process.env.PI_CODING_AGENT_DIR;var base=b?b:((process.env.USERPROFILE||process.env.HOME||"")+"/.omp/agent");var c=null;try{var t=__cnyRead(base+"/cost.json","utf8");c=JSON.parse(t)}catch(e){c=null}__cnyCfgCache=c;return c}
-function __cnyFmt(v,c){var s=c&&c.symbol?c.symbol:"$";if(v===0)return s+"0";if(v<0.01)return s+v.toFixed(4);if(v<1)return s+v.toFixed(3);return s+v.toFixed(2)}function __cnyPeak(){var d=new Date(),h=(d.getUTCHours()+8)%24;return h>=9&&h<12||h>=14&&h<18}function __cnyShow(n){var c=__cnyCfg(),q=n&&n.session,sm=q&&q.state&&q.state.model;if(!c||!sm)return null;var fp=c.freeProviders||[];return sm.provider&&fp.indexOf(sm.provider)>=0}function __cnyAdvisor(n){var c=__cnyCfg(),q=n&&n.session;if(!c||!q)return null;var st=q.getAdvisorStats&&q.getAdvisorStats();var mp=st&&st.model?st.model.provider:null;var fp=c.freeProviders||[];if(mp&&fp.indexOf(mp)>=0)return "coding plan";var h=q.getAdvisorCost&&q.getAdvisorCost()||0;var r=c&&typeof c.rate==="number"?c.rate:1;return __cnyFmt(h*r,c)}function __cnyCalc(n){var c=__cnyCfg(),q=n&&n.session,sm=q&&q.state&&q.state.model;if(!c||!q)return null;var fp=c.freeProviders||[];if(sm&&sm.provider&&fp.indexOf(sm.provider)>=0)return "coding plan";var cur=sm&&sm.provider&&sm.id?(sm.provider+"/"+sm.id):null;var total=0;var r=typeof c.rate==="number"?c.rate:1;var mo=c.models||{};var br=q.sessionManager&&q.sessionManager.getBranch?q.sessionManager.getBranch():null;if(br)for(var e of br){if(e&&e.type==="model_change"&&typeof e.model==="string"){cur=e.model}else if(e&&e.type==="message"&&e.message&&e.message.role==="assistant"){var u=e.message.usage;if(!u)continue;var k=cur?cur.replace("/",":"):"";var pr=mo[k]||mo[cur]||null;if(pr){var pz=pr.peak?(__cnyPeak()?pr.peak:pr.offpeak||pr):pr;total+=(u.input||0)/1e6*(pz.input||0)+(u.cacheRead||0)/1e6*(pz.cacheRead||0)+(u.cacheWrite||0)/1e6*(pz.cacheWrite||0)+(u.output||0)/1e6*(pz.output||0)}else{total+=(u.cost&&u.cost.total?u.cost.total:0)*r}}}return __cnyFmt(total,c)}`;
+function __cnyFmt(v,c){var s=c&&c.symbol?c.symbol:"$";if(v===0)return s+"0";if(v<0.01)return s+v.toFixed(4);if(v<1)return s+v.toFixed(3);return s+v.toFixed(2)}function __cnyPeak(){var d=new Date(),h=(d.getUTCHours()+8)%24,w=d.getUTCDay();return w>=1&&w<=5&&(h>=9&&h<12||h>=14&&h<18)}function __cnyShow(n){var c=__cnyCfg(),q=n&&n.session,sm=q&&q.state&&q.state.model;if(!c||!sm)return null;var fp=c.freeProviders||[];return sm.provider&&fp.indexOf(sm.provider)>=0}function __cnyAdvisor(n){var c=__cnyCfg(),q=n&&n.session;if(!c||!q)return null;var st=q.getAdvisorStats&&q.getAdvisorStats();var mp=st&&st.model?st.model.provider:null;var fp=c.freeProviders||[];if(mp&&fp.indexOf(mp)>=0)return "coding plan";var h=q.getAdvisorCost&&q.getAdvisorCost()||0;var r=c&&typeof c.rate==="number"?c.rate:1;return __cnyFmt(h*r,c)}function __cnyCalc(n){var c=__cnyCfg(),q=n&&n.session,sm=q&&q.state&&q.state.model;if(!c||!q)return null;var fp=c.freeProviders||[];if(sm&&sm.provider&&fp.indexOf(sm.provider)>=0)return "coding plan";var cur=sm&&sm.provider&&sm.id?(sm.provider+"/"+sm.id):null;var total=0;var r=typeof c.rate==="number"?c.rate:1;var mo=c.models||{};var br=q.sessionManager&&q.sessionManager.getBranch?q.sessionManager.getBranch():null;if(br)for(var e of br){if(e&&e.type==="model_change"&&typeof e.model==="string"){cur=e.model}else if(e&&e.type==="message"&&e.message&&e.message.role==="assistant"){var u=e.message.usage;if(!u)continue;var k=cur?cur.replace("/",":"):"";var pr=mo[k]||mo[cur]||null;if(pr){var pz=pr.peak?(__cnyPeak()?pr.peak:pr.offpeak||pr):pr;total+=(u.input||0)/1e6*(pz.input||0)+(u.cacheRead||0)/1e6*(pz.cacheRead||0)+(u.cacheWrite||0)/1e6*(pz.cacheWrite||0)+(u.output||0)/1e6*(pz.output||0)}else{total+=(u.cost&&u.cost.total?u.cost.total:0)*r}}}return __cnyFmt(total,c)}`;
 
 function log(msg) {
 	try {
@@ -221,6 +222,7 @@ function patchBundle() {
 			pre.includes(`__cnyCalc(${renderParam})`) &&
 			pre.includes(`__cnyShow(${renderParam})`) &&
 			src.includes("q=n&&n.session") &&
+			src.includes("__cnyPeak(){var d=new Date(),h=(d.getUTCHours()+8)%24,w=d.getUTCDay()") &&
 			hasVersionCheckBypass(src)
 		) {
 			log("already patched — nothing to do");
