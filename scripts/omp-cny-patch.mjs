@@ -207,7 +207,7 @@ function __cnyIsFree(){var c=__cnyCfg();if(!c)return false;var f=c.freeProviders
 
 /** True if the bundle already carries the CNY patch markers. */
 function isBundlePatched(src) {
-	return src.includes(`__CNY_PATCH_VERSION__=${PATCH_MANIFEST.patchVersion}`) && src.includes("__cnyIsFree") && src.includes("__cnyFmt");
+	return src.includes(`__CNY_PATCH_VERSION__=${JSON.stringify(PATCH_MANIFEST.patchVersion)}`) && src.includes("__cnyIsFree") && src.includes("__cnyFmt");
 }
 
 function patchBundle(bundle, rate, free) {
@@ -261,7 +261,7 @@ function patchBundle(bundle, rate, free) {
 	);
 
 	// Post-write sanity
-	if (src.split('id:"cost",render(').length !== 2 || !src.includes("__cnyIsFree") || !src.includes(`__CNY_PATCH_VERSION__=${PATCH_MANIFEST.patchVersion}`)) {
+	if (src.split('id:"cost",render(').length !== 2 || !src.includes("__cnyIsFree") || !src.includes(`__CNY_PATCH_VERSION__=${JSON.stringify(PATCH_MANIFEST.patchVersion)}`)) {
 		fail("sanity check failed after patching — bundle left unchanged, please report");
 	}
 	return src;
