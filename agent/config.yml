@@ -5,14 +5,14 @@ setupVersion: 1
 modelRoles: 
   plan: volcengine-coding/glm-5.3:high
   slow: volcengine-coding/glm-5.3:max
-  advisor: volcengine-coding/doubao-seed-2.1-turbo:medium
+  advisor: volcengine-coding/doubao-seed-evolving:medium
   commit: volcengine-coding/doubao-seed-2.0-mini:off
   smol: volcengine-coding/doubao-seed-2.0-mini:minimal
   default: volcengine-coding/deepseek-v4-flash-ga-260731
   tiny: volcengine-coding/doubao-seed-2.0-mini:off
   vision: volcengine-coding/doubao-seed-2.0-mini:medium
   DeepSeek: deepseek/deepseek-v4-flash:high
-  designer: volcengine-coding/doubao-seed-2.1-turbo:medium
+  designer: volcengine-coding/doubao-seed-evolving:medium
 defaultThinkingLevel: auto
 memory: 
   backend: mnemopi
