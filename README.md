@@ -99,6 +99,7 @@ statusLine:
 | `smol` | doubao-seed-2.0-mini | `minimal` | 轻量快速任务 |
 | `advisor` | doubao-seed-evolving | `medium` | 顾问模式 |
 | `designer` | doubao-seed-evolving | `medium` | UI/UX 设计任务 |
+| `task` | glm-5-3-flash | `auto` | 任务子代理（委派多步任务） |
 | `commit` | doubao-seed-2.0-mini | `off` | 生成 commit message |
 | `tiny` | doubao-seed-2.0-mini | `off` | 极小任务（禁用思考） |
 | `vision` | doubao-seed-2.0-mini | `medium` | 视觉/截图理解 |

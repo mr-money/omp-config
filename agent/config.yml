@@ -13,6 +13,7 @@ modelRoles:
   vision: volcengine-coding/doubao-seed-2.0-mini:medium
   DeepSeek: deepseek/deepseek-v4-flash:high
   designer: volcengine-coding/doubao-seed-evolving:medium
+  task: volcengine-coding/glm-5-3-flash:auto
 defaultThinkingLevel: auto
 memory: 
   backend: mnemopi
