@@ -93,7 +93,7 @@ statusLine:
 
 | 角色 | 模型 | 思考档位 | 用途 |
 |------|------|----------|------|
-| `default` | deepseek-v4-flash-ga-260731 | — | 默认主模型，日常编码 |
+| `default` | glm-5-3-flash | — | 默认主模型，日常编码 |
 | `plan` | GLM-5.3 | `high` | 任务规划阶段 |
 | `slow` | GLM-5.3 | `max` | 深度推理 / 复杂问题 |
 | `smol` | doubao-seed-2.0-mini | `minimal` | 轻量快速任务 |
@@ -109,8 +109,9 @@ statusLine:
 ### 模型提供商 (`models.yml`)
 
 内置火山引擎大模型 API（方舟，coding plan 订阅制）：
-- **deepseek-v4-flash-ga-260731** — 默认模型（1M 上下文）
+- **glm-5-3-flash** — 默认模型（1M 上下文）
 - **glm-5.3** — 规划 / 慢速深度推理（1M 上下文）
+- **deepseek-v4-flash-ga-260731** — 备用默认（1M 上下文，原默认模型）
 - **doubao-seed-2.0-mini** — 轻量 / 视觉 / commit 模型
 - **doubao-seed-evolving** — 顾问 / 设计（advisor、designer 角色）（1M 上下文）
 

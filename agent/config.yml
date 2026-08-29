@@ -8,7 +8,7 @@ modelRoles:
   advisor: volcengine-coding/doubao-seed-evolving:medium
   commit: volcengine-coding/doubao-seed-2.0-mini:off
   smol: volcengine-coding/doubao-seed-2.0-mini:minimal
-  default: volcengine-coding/deepseek-v4-flash-ga-260731
+  default: volcengine-coding/glm-5-3-flash
   tiny: volcengine-coding/doubao-seed-2.0-mini:off
   vision: volcengine-coding/doubao-seed-2.0-mini:medium
   DeepSeek: deepseek/deepseek-v4-flash:high

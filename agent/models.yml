@@ -13,6 +13,14 @@ providers:
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens
+      - id: glm-5-3-flash
+        name: GLM 5.3 Flash(ark)
+        input: [text]
+        contextWindow: 1024000
+        maxTokens: 65536
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
       - id: doubao-seed-2.0-mini
         name: Doubao Seed 2.0 Mini
         input: [text, image]
