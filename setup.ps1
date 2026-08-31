@@ -9,7 +9,7 @@ $PatchScript = Join-Path $OmpHome "omp-cny-patch.mjs"
 $bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $env:USERPROFILE ".bun" }
 $OmpPkgDir = Join-Path $bunInstall "install\global\node_modules\@oh-my-pi\pi-coding-agent"
 $OmpPkgBundle = Join-Path $OmpPkgDir "dist\cli.js"
-$RecommendedOmpVersion = "18.0.3"
+$RecommendedOmpVersion = "18.0.11"
 
 function Write-Step { param($msg) Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-OK   { param($msg) Write-Host "    OK  $msg" -ForegroundColor Green }
