@@ -10,10 +10,11 @@ modelRoles:
   smol: volcengine-coding/doubao-seed-2.0-mini:minimal
   default: volcengine-coding/glm-5-3-flash
   tiny: volcengine-coding/doubao-seed-2.0-mini:off
-  vision: volcengine-coding/doubao-seed-2.0-mini:medium
+  vision: AMD.DeepSeek-V4-Flash-Vision-Exp:medium
   DeepSeek: deepseek/deepseek-v4-flash:high
   designer: volcengine-coding/doubao-seed-evolving:medium
   task: volcengine-coding/glm-5-3-flash:auto
+  Free: AMD.DeepSeek-V4-Flash-Vision-Exp:high
 defaultThinkingLevel: auto
 memory: 
   backend: mnemopi
@@ -26,6 +27,7 @@ cycleOrder:
   - default
   - slow
   - DeepSeek
+  - Free
 statusLine: 
   segmentOptions: 
     git: 

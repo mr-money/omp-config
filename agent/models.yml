@@ -45,3 +45,36 @@ providers:
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens
+  amd:
+    baseUrl: https://developer.amd.com.cn/radeon/api/v1
+    api: openai-completions
+    apiKey: <AMD_API_KEY>
+    authHeader: true
+    models:
+      - id: DeepSeek-V4-Flash-Vision-Exp
+        name: DeepSeek V4 Flash Vision (AMD)
+        input: [text, image]
+        contextWindow: 1048576
+        maxTokens: 65536
+        reasoning: true
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+      - id: DeepSeek-V4-Flash
+        name: DeepSeek V4 Flash (AMD)
+        input: [text]
+        contextWindow: 1048576
+        maxTokens: 65536
+        reasoning: true
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+      - id: Qwen3.8-Flash-Next
+        name: Qwen3.8 Flash Next (AMD)
+        input: [text]
+        contextWindow: 262144
+        maxTokens: 65536
+        reasoning: true
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens

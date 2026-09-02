@@ -43,7 +43,7 @@ cd omp-config
 1. 校验 bun / omp 已安装
 2. 复制 `agent/` → `~/.omp/agent/`、`skills/` → `~/.omp/agent/skills/`、`scripts/omp-cny-patch.mjs` → `~/.omp/`
 3. 探测本机 pwsh / gopls / python 路径，写回对应配置
-4. 若 `models.yml` 仍是 `<YOUR_API_KEY>` 占位，交互提示输入
+4. 若 `models.yml` 仍有 `<YOUR_API_KEY>` / `<AMD_API_KEY>` 占位，按 provider 交互提示输入
 5. 执行 `bun ~/.omp/omp-cny-patch.mjs --setup` 激活人民币计价补丁（布局 B 下同时安装自愈 wrapper）
 
 只读健康检查：`.\doctor.ps1`。它检查 Bun、OMP/bundle、配置文件、CNY patch、wrapper 及 gopls/python，不会自动修复。
@@ -52,7 +52,8 @@ cd omp-config
 
 | 文件 | 字段 | 部署方式 | 说明 |
 |------|------|----------|------|
-| `~/.omp/agent/models.yml` | `apiKey` | setup 交互填入 / `OMP_API_KEY` 环境变量 | 火山引擎 API Key；优先读环境变量，否则交互提示；已填则跳过 |
+| `~/.omp/agent/models.yml` | `apiKey`（火山） | setup 交互填入 / `OMP_API_KEY` 环境变量 | 火山引擎 API Key；优先读环境变量，否则交互提示；已填则跳过 |
+| `~/.omp/agent/models.yml` | `apiKey`（AMD） | setup 交互填入 / `AMD_API_KEY` 环境变量 | AMD 开发者平台 API Key（`rc-` 前缀）；优先读环境变量，否则交互提示；已填则跳过 |
 | `~/.omp/agent/lsp.json` | `servers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`gopls` / `python -m pylsp`）；探测到绝对路径则写回 |
 | `~/.omp/agent/config.yml` | `shellPath` | setup 探测写入 | 检测到 pwsh 则自动写入；未检测到则省略（omp 回退到 cmd.exe） |
 | `~/.omp/agent/config.yml` | `statusLine.segmentOptions.git` | 直接复制 | 隐藏状态栏 git 段（分支 / +N staged / *N unstaged / ?N untracked） |
@@ -101,11 +102,11 @@ statusLine:
 | `designer` | doubao-seed-evolving | `medium` | UI/UX 设计任务 |
 | `task` | glm-5-3-flash | `auto` | 任务子代理（委派多步任务） |
 | `commit` | doubao-seed-2.0-mini | `off` | 生成 commit message |
-| `tiny` | doubao-seed-2.0-mini | `off` | 极小任务（禁用思考） |
-| `vision` | doubao-seed-2.0-mini | `medium` | 视觉/截图理解 |
+| `vision` | AMD.DeepSeek-V4-Flash-Vision-Exp | `medium` | 视觉/截图理解（AMD 免费通道） |
+| `Free` | AMD.DeepSeek-V4-Flash-Vision-Exp | `high` | AMD 免费通道（免费提供商，不计费） |
 | `DeepSeek` | deepseek-v4-flash | `high` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用） |
 
-**思考档位循环 (`cycleOrder`)**: `smol` → `default` → `slow` → `DeepSeek`，逐级升档。
+**思考档位循环 (`cycleOrder`)**: `smol` → `default` → `slow` → `Free`，逐级升档。
 
 ### 模型提供商 (`models.yml`)
 
@@ -116,7 +117,18 @@ statusLine:
 - **doubao-seed-2.0-mini** — 轻量 / 视觉 / commit 模型
 - **doubao-seed-evolving** — 顾问 / 设计（advisor、designer 角色）（1M 上下文）
 
-`apiKey` 部署时由 `setup.ps1` 交互填入（或通过 `OMP_API_KEY` 环境变量），仓库中保持 `<YOUR_API_KEY>` 占位脱敏。
+AMD 免费通道（`amd` provider，AMD Radeon 开发者平台，OpenAI 兼容）：
+- **DeepSeek-V4-Flash-Vision-Exp** — 视觉/Free 角色（1M 上下文，支持文本+图像，`reasoning`）
+- **DeepSeek-V4-Flash** — 纯文本（1M 上下文，`reasoning`）
+- **Qwen3.8-Flash-Next** — 纯文本（262K 上下文，`reasoning`）
+
+`amd` provider 为**免费额度**，计入 `freeProviders`，状态栏显示 `coding plan` 不计费；`apiKey`（`rc-` 前缀）为 AMD 开发者平台 key，仓库中同样保持占位脱敏，部署时填入本地。
+
+> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色与 `cost.json` 定价指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，无需在 `models.yml` 配置——外部配置仅含火山 `volcengine-coding` 与 AMD `amd`。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。
+
+### 费用 (`cost.json`)
+
+- **`freeProviders: ["volcengine-coding", "amd"]`** — 火山引擎 coding plan 与 AMD 免费通道为订阅/免费制，状态栏显示 `coding plan`，不计 token 费用、不显示顾问尾巴
 
 > **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色与 `cost.json` 定价指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，无需在 `models.yml` 配置——外部配置仅含火山 `volcengine-coding`。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。
 

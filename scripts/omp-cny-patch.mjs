@@ -75,7 +75,7 @@ const PATCH_MANIFEST = Object.freeze({
 	minimumVersion: "18.0.2",
 	recommendedVersion: "18.0.11",
 	verifiedVersions: ["18.0.3", "18.0.11"],
-	patchVersion: "2026.08.31.1",
+	patchVersion: "2026.09.02.1",
 });
 const MIN_BUNDLE_VER = parseVersion(PATCH_MANIFEST.minimumVersion);
 
@@ -202,6 +202,8 @@ const HELPERS = `import{readFileSync as __cnyRead}from"node:fs";
 var __cnyCfgCache=void 0,__cnySess=void 0;
 function __cnyCfg(){if(__cnyCfgCache!==void 0)return __cnyCfgCache;var b=process.env.PI_CODING_AGENT_DIR;var base=b?b:((process.env.USERPROFILE||process.env.HOME||"")+"/.omp/agent");var c=null;try{var t=__cnyRead(base+"/cost.json","utf8");c=JSON.parse(t)}catch(e){c=null}__cnyCfgCache=c;return c}
 function __cnyFmt(v,c){var s=c&&c.symbol?c.symbol:"$";if(v<0.01)return s+v.toFixed(4);if(v<1)return s+v.toFixed(3);return s+v.toFixed(2)}
+var __cnyOrigFetch=globalThis.fetch;
+globalThis.fetch=function(u,o){try{if(o&&typeof o.body==="string"&&String(u).includes("developer.amd.com.cn")){var j=JSON.parse(o.body);if(j&&j.thinking!==undefined){delete j.thinking;o=Object.assign({},o,{body:JSON.stringify(j)})}}}catch(e){}return __cnyOrigFetch.call(this,u,o)};
 function __cnyIsFree(){var c=__cnyCfg();if(!c)return false;var f=c.freeProviders;if(!f||!f.length)return false;var m=null;try{m=(typeof __cnySess!=="undefined"&&__cnySess)?__cnySess.state&&__cnySess.state.model:null}catch(e){}if(!m||!m.provider)return false;return f.indexOf(m.provider)>=0}
 `;
 

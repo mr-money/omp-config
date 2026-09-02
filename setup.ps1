@@ -1,4 +1,4 @@
-# 行为：检查/安装升级 OMP -> 复制配置 -> 填 API Key -> 跑 patch --setup
+﻿# 行为：检查/安装升级 OMP -> 复制配置 -> 填 API Key -> 跑 patch --setup
 
 $ErrorActionPreference = "Stop"
 
@@ -57,16 +57,32 @@ New-Item -ItemType Directory -Force -Path (Join-Path $AgentDir "skills") | Out-N
 Write-Step "复制 agent 配置"
 $srcModels = Join-Path $RepoRoot "agent\models.yml"
 $dstModels = Join-Path $AgentDir "models.yml"
-# 若目标 models.yml 已有真实 apiKey（非占位），提取出来待复制后回填——
-# 不能跳过整个文件，否则新模型定义（glm-5.3 / doubao-seed-2.0-mini 等）永不部署
-$existingKey = $null
+
+# 从 models.yml 中提取指定 provider 块的 apiKey 真实值（非占位符）。
+# 按 provider 名定位块（缩进 2 空格），再取该块内第一个非占位 apiKey 值。
+function Get-ProviderApiKey {
+    param([string]$Content, [string]$Provider)
+    $block = [regex]::Match($Content, "(?m)^  $([regex]::Escape($Provider)):\r?\n(.*?)(?=^  [A-Za-z0-9_-]+:\s*$|\z)", [System.Text.RegularExpressions.RegexOptions]::Singleline)
+    if (-not $block.Success) { return $null }
+    $blockText = $block.Value
+    $km = [regex]::Match($blockText, '(?m)^\s*apiKey:\s*(\S+)')
+    if (-not $km.Success) { return $null }
+    $val = $km.Groups[1].Value
+    if ($val -like '<*>*') { return $null }   # 占位符 <...> 视为未填
+    return $val
+}
+
+# 目标机已有真实 key（非占位）则提取保留，待复制后回填——
+# 不能跳过整个文件，否则新模型定义（glm-5.3 / doubao-seed-2.0-mini / amd 等）永不部署
+$existingKeys = @{}   # placeholder -> key
 if ((Test-Path $dstModels) -and (Test-Path $srcModels)) {
     $dstContent = [System.IO.File]::ReadAllText($dstModels)
-    if ($dstContent -notmatch 'apiKey:\s*<YOUR_API_KEY>') {
-        $km = [regex]::Match($dstContent, '(?m)^\s*apiKey:\s*(\S+)')
-        if ($km.Success) {
-            $existingKey = $km.Groups[1].Value
-            Write-OK "检测到 models.yml 已有 apiKey，部署后回填保留"
+    foreach ($p in @("volcengine-coding", "amd")) {
+        $k = Get-ProviderApiKey $dstContent $p
+        if ($k) {
+            $placeholder = if ($p -eq "amd") { "<AMD_API_KEY>" } else { "<YOUR_API_KEY>" }
+            $existingKeys[$placeholder] = $k
+            Write-OK "检测到 models.yml 已有 $p 的 apiKey，部署后回填保留"
         }
     }
 }
@@ -77,14 +93,17 @@ Get-ChildItem (Join-Path $RepoRoot "agent") -Exclude "models.yml" | ForEach-Obje
 }
 # models.yml 始终用仓库最新定义；若原有真实 key，复制后回填
 Copy-Item -Force $srcModels -Destination $dstModels
-if ($existingKey) {
+if ($existingKeys.Count -gt 0) {
     $yml = [System.IO.File]::ReadAllText($dstModels)
-    $key = $existingKey
-    # MatchEvaluator 插入字面值（防 key 含 $ 被当回引用）
-    $yml = [regex]::Replace($yml, 'apiKey:\s*<YOUR_API_KEY>',
-        { param($m) "apiKey: $key" })
+    # 每个 provider 有唯一占位符（<YOUR_API_KEY> / <AMD_API_KEY>），全局精确替换不会串 key
+    foreach ($placeholder in $existingKeys.Keys) {
+        $key = $existingKeys[$placeholder]
+        # MatchEvaluator 插入字面值（防 key 含 $ 被当回引用）
+        $yml = [regex]::Replace($yml, 'apiKey:\s*' + [regex]::Escape($placeholder),
+            { param($m) "apiKey: $key" })
+    }
     Write-Utf8Text $dstModels $yml
-    Write-OK "已回填原 apiKey 到最新 models.yml"
+    Write-OK "已回填各 provider apiKey 到最新 models.yml"
 }
 Write-OK "agent/ -> ~/.omp/agent/"
 
@@ -162,37 +181,47 @@ if (Test-Path $lspJson) {
     }
 }
 
-# 6. API Key 填入（环境变量 OMP_API_KEY 优先，否则交互输入）
+# 6. API Key 填入（每个 provider 单独处理：环境变量优先，否则交互输入）
 Write-Step "配置 API Key"
 $modelsYml = Join-Path $AgentDir "models.yml"
 if (Test-Path $modelsYml) {
     $yml = [System.IO.File]::ReadAllText($modelsYml)
-    if ($yml -match 'apiKey:\s*<YOUR_API_KEY>') {
-        $plain = $null
-        if (-not [string]::IsNullOrWhiteSpace($env:OMP_API_KEY)) {
-            $plain = $env:OMP_API_KEY.Trim()
-            Write-OK "从环境变量 OMP_API_KEY 读取"
-        } elseif ([Environment]::UserInteractive) {
-            $secure = Read-Host "输入火山方舟 API Key" -AsSecureString
-            $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
-            $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr).Trim()
-            [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
-        } else {
-            Write-Warn "非交互环境且 OMP_API_KEY 未设置，保留占位符"
-        }
 
-        if ([string]::IsNullOrWhiteSpace($plain)) {
-            Write-Warn "API Key 为空，保留占位符"
+    # provider 定义：名字 -> (占位符, 环境变量, 提示文案)
+    $providers = @(
+        @{ Name = "volcengine-coding"; Placeholder = "<YOUR_API_KEY>"; EnvVar = "OMP_API_KEY"; Prompt = "输入火山方舟 API Key" },
+        @{ Name = "amd";               Placeholder = "<AMD_API_KEY>";  EnvVar = "AMD_API_KEY";  Prompt = "输入 AMD 开发者平台 API Key" }
+    )
+
+    foreach ($prov in $providers) {
+        if ($yml -match [regex]::Escape($prov.Placeholder)) {
+            $plain = $null
+            if (-not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($prov.EnvVar))) {
+                $plain = [Environment]::GetEnvironmentVariable($prov.EnvVar).Trim()
+                Write-OK "从环境变量 $($prov.EnvVar) 读取 $($prov.Name) key"
+            } elseif ([Environment]::UserInteractive) {
+                $secure = Read-Host $prov.Prompt -AsSecureString
+                $ptr = [System.Runtime.InteropServices.Marshal]::SecureStringToBSTR($secure)
+                $plain = [System.Runtime.InteropServices.Marshal]::PtrToStringBSTR($ptr).Trim()
+                [System.Runtime.InteropServices.Marshal]::ZeroFreeBSTR($ptr)
+            } else {
+                Write-Warn "非交互环境且 $($prov.EnvVar) 未设置，$($prov.Name) 保留占位符"
+            }
+
+            if ([string]::IsNullOrWhiteSpace($plain)) {
+                Write-Warn "$($prov.Name) API Key 为空，保留占位符"
+            } else {
+                # 用 MatchEvaluator 委托插入字面 key（避免 $ 在替换模板中被当回引用）
+                $yml = [regex]::Replace($yml, 'apiKey:\s*' + [regex]::Escape($prov.Placeholder),
+                    { param($m) "apiKey: $plain" })
+                Write-OK "已写入 $($prov.Name) 的 apiKey"
+            }
         } else {
-            # 用 MatchEvaluator 委托插入字面 key（避免 $ 在替换模板中被当回引用）
-            $yml = [regex]::Replace($yml, 'apiKey:\s*<YOUR_API_KEY>',
-                { param($m) "apiKey: $plain" })
-            Write-Utf8Text $modelsYml $yml
-            Write-OK "已写入 models.yml apiKey"
+            Write-OK "$($prov.Name) apiKey 已配置，跳过"
         }
-    } else {
-        Write-OK "models.yml apiKey 已配置，跳过"
     }
+
+    Write-Utf8Text $modelsYml $yml
 }
 
 # 7. 跑 patch --setup
@@ -209,7 +238,7 @@ Write-Step "部署完成"
 Write-Host ""
 Write-Host "  omp 配置目录: $AgentDir"
 Write-Host "  patch 脚本:   $PatchScript"
-  Write-Host "  omp 安装: $OmpPkgBundle (bundle)"
+Write-Host "  omp 安装: $OmpPkgBundle (bundle)"
 Write-Host ""
 Write-Host "  启动: omp"
 Write-Host "  回滚: bun $PatchScript --restore"
