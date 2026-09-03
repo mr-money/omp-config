@@ -124,17 +124,54 @@ AMD 免费通道（`amd` provider，AMD Radeon 开发者平台，OpenAI 兼容�
 
 `amd` provider 为**免费额度**，计入 `freeProviders`，状态栏显示 `coding plan` 不计费；`apiKey`（`rc-` 前缀）为 AMD 开发者平台 key，仓库中同样保持占位脱敏，部署时填入本地。
 
-> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色与 `cost.json` 定价指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，无需在 `models.yml` 配置——外部配置仅含火山 `volcengine-coding` 与 AMD `amd`。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。
+智谱 GLM（`zhipu` provider，智谱开放平台，OpenAI 兼容）：
+- **glm-5.3-flash** — 多模态（文本+图像），1M 上下文，131K 输出上限，`reasoning`（思考档位 `low/high/max`，默认 `max`）
+- `baseUrl: https://open.bigmodel.cn/api/paas/v4`，请求自动落到 `/chat/completions`；`open.bigmodel.cn` 主机会被自动识别为智谱，走 `zai` thinking 方言（`thinking.type: enabled` + `reasoning_effort`，工具调用时自动开启 `tool_stream`）
+- 价格（元/百万 tokens）：输入 **0.8**、输出 **2.8**、缓存命中 **0.23**、缓存写入 **0.8**。`models.yml` 中按美元计价（`元 ÷ 7.25`）：`input 0.110345 / output 0.386207 / cacheRead 0.031724 / cacheWrite 0.110345`，状态栏自动按 `rate` 换算回人民币显示。
+
+> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色与 `cost.json` 定价指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，无需在 `models.yml` 配置——外部配置仅含火山 `volcengine-coding`、AMD `amd` 与智谱 `zhipu`。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。
+
+### 新增模型提供商节点（`models.yml`）
+
+在 `providers:` 下追加一个 provider 块即可（参考现有 `amd` / `zhipu` 节点）。**无需阅读 omp 底层代码**，只需满足以下几点：
+
+```yaml
+providers:
+  myprovider:                       # ① 唯一 provider 名（小写字母/数字/连字符）
+    baseUrl: https://…/v1          # ② OpenAI 兼容端点基址（不含 /chat/completions，omp 自动拼接）
+    api: openai-completions        # ③ 固定 openai-completions（绝大多数厂商都兼容）
+    apiKey: <MY_API_KEY>           # ④ 占位符，部署时由 setup.ps1 交互填入或环境变量
+    authHeader: true               # ⑤ 固定 true（key 走 Authorization: Bearer）
+    models:
+      - id: my-model               # ⑥ 模型 ID（API 请求里的 model 字段，必须与厂商一致）
+        name: 显示名
+        input: [text, image]       # ⑦ 能力声明：支持图像就写 [text, image]，否则 [text]
+        contextWindow: 1000000     # ⑧ 上下文窗口（token）
+        maxTokens: 65536           # ⑨ 输出上限（token）
+        reasoning: true            # ⑩ 思考模型才写 true（自动派生思考档位）
+        cost:                      # ⑪ 计价（美元/百万 tokens）：状态栏价格 = cost × rate 换算人民币
+          input: 0.110345          #    输入价（人民币价 ÷ 汇率，如 0.8 ÷ 7.25）
+          output: 0.386207         #    输出价（2.8 ÷ 7.25）
+          cacheRead: 0.031724      #    缓存命中价（0.23 ÷ 7.25）
+          cacheWrite: 0.110345     #    缓存写入价（0.8 ÷ 7.25）
+        compat:                    # ⑫ 绝大多数情况照抄，不用改
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+```
+
+要点：
+
+- **思考档位自动派生**：`reasoning: true` 后 omp 按模型 ID 自动识别（如 GLM-5.3+/Kimi K3 得到 `low/high/max`、默认 `max`），**不要**手写 `thinking:` 块，除非默认档位不对。
+- **多模态**：厂商支持图像就把 `input` 写 `[text, image]`，omp 会自动按 `image_url` 内容块发送。
+- **状态栏计价**：价格写在模型 `cost` 块里，**按美元/百万 tokens 计价**（= 人民币价 ÷ `rate`），状态栏显示 `¥ <USD × rate>`。不写 `cost` 则不显示价格或显示免费。
+- **验证**：`omp models ls` 应能看到新 provider 与模型；若有 `models.yml validation failed` 报错，说明字段名或取值不合法（对照上面模板检查）。
+- **占位符约定**：仓库中 `apiKey` 一律用 `<XXX_API_KEY>` 占位脱敏，`setup.ps1` 部署时按 provider 交互填入 / 读环境变量。
+
+> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色与 `cost.json` 定价指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，无需在 `models.yml` 配置——外部配置仅含火山 `volcengine-coding`、AMD `amd` 与智谱 `zhipu`。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。
 
 ### 费用 (`cost.json`)
 
 - **`freeProviders: ["volcengine-coding", "amd"]`** — 火山引擎 coding plan 与 AMD 免费通道为订阅/免费制，状态栏显示 `coding plan`，不计 token 费用、不显示顾问尾巴
-
-> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色与 `cost.json` 定价指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，无需在 `models.yml` 配置——外部配置仅含火山 `volcengine-coding`。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。
-
-### 费用 (`cost.json`)
-
-- **`freeProviders: ["volcengine-coding"]`** — 火山引擎 coding plan 为订阅制，状态栏显示 `coding plan`，不计 token 费用、不显示顾问尾巴
 - **DeepSeek 官方 API** — 按量付费，人民币计价（汇率 7.25）。18.x 原生按 provider 定价计算成本；补丁负责 `$`→`¥` 与 `×汇率`：
   - 定价来源：[DeepSeek 官方定价页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)（价格如有变动，以此页为准）
   - 覆盖模型：`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro`
@@ -151,12 +188,7 @@ AMD 免费通道（`amd` provider，AMD Radeon 开发者平台，OpenAI 兼容�
     | 输入（缓存未命中） | 4.5 | 9.0 |
     | 输出 | 13.5 | 27.0 |
 
-  字段映射（`cost.json` 内每个模型为 `peak` / `offpeak` 两组）：
-  - `input` / `cacheWrite` = 输入（缓存未命中）价格
-  - `cacheRead` = 输入（缓存命中）价格
-  - `output` = 输出价格
-
-  > 该定价在使用 `deepseek` provider 时生效（omp 内置，baseUrl 已配置，仅需在 omp 设置中填入官方 API Key），用于覆盖 omp 内置的 USD 旧价。
+  > **定价机制**：omp 18.0.11 下状态栏价格来自各模型的 `models.yml` `cost` 块（美元/百万 tokens，人民币价 ÷ 汇率），补丁只做 `×汇率` 与 `¥` 符号。`cost.json` 的 `models`（peak/offpeak）块是旧版（≤18.0.3）遗留，18.0.11 补丁已不再读取；DeepSeek 若需精确计价，把上表人民币价 ÷ 7.25 写进 `deepseek` 模型的 `cost` 块（omp 内置 provider 亦可通过 `modelOverrides` 覆盖）。
 
 补丁改写三处代码（仅支持 **omp 18.0.2+ bun 全局包**，18.0.1 原生 exe 布局不再支持）：
 

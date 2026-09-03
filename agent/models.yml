@@ -78,3 +78,23 @@ providers:
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens
+  zhipu:
+    baseUrl: https://open.bigmodel.cn/api/paas/v4
+    api: openai-completions
+    apiKey: <ZHIPU_API_KEY>  # 替换为智谱 GLM API Key
+    authHeader: true
+    models:
+      - id: glm-5.3-flash
+        name: GLM 5.3 Flash
+        input: [text, image]
+        contextWindow: 1048576
+        maxTokens: 131072
+        reasoning: true
+        cost:
+          input: 0.110345
+          output: 0.386207
+          cacheRead: 0.031724
+          cacheWrite: 0.110345
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
