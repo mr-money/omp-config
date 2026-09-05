@@ -1,5 +1,6 @@
 $ErrorActionPreference = "SilentlyContinue"
 $homeDir = $env:USERPROFILE
+$ompHome = Join-Path $homeDir ".omp"
 $bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $homeDir ".bun" }
 $bundle = Join-Path $bunInstall "install\global\node_modules\@oh-my-pi\pi-coding-agent\dist\cli.js"
 $pkg = Split-Path (Split-Path $bundle)
