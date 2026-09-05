@@ -24,7 +24,7 @@ omp-config/
 
 > **PowerShell**：`setup.ps1` 同时支持 Windows PowerShell 5.1 与 PowerShell 7+（脚本已带 UTF-8 BOM，中文注释/输出在两种环境下均解析正常；终端若显示中文乱码仅影响显示，不影响执行）。
 
-- `setup.ps1` 会自动安装/升级 bun 全局包到推荐的 **OMP 18.1.10**；patch 最低支持 18.0.2，已验证 18.0.3、18.0.11 与 18.1.10（三布局锚点）。18.0.1 原生 exe 布局不再作为 patch 目标。
+- `setup.ps1` 会自动安装/升级 bun 全局包到推荐的 **OMP 18.1.10**；patch 最低支持 18.0.2，已验证 18.0.3、18.0.11 与 18.1.10（三布局锚点）。18.0.1 原生 exe 布局不再作为 patch 目标。支持自定义 `BUN_INSTALL`（三脚本 `setup.ps1` / `omp-cny-patch.mjs` / `doctor.ps1` 同一约定）。
 - 已安装 `bun`（patch 脚本用 bun 运行）
 - 已安装语言服务器（gopls、pylsp 等）
 
@@ -270,7 +270,7 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 
 当前机器使用 **omp 18.1.10 bun 全局包**，只有单一入口：
 
-- `~/.bun/bin/omp.cmd` — 启动包装器：先跑 `bun ~/.omp/omp-cny-patch.mjs --check` 自愈补丁，再 `bun …\dist\cli.js` 启动；`omp update` 结束后自动重跑 `--setup` 夺回 shim
+- `~/.bun/bin/omp.cmd` — 启动包装器：先跑 `bun ~/.omp/omp-cny-patch.mjs --check` 自愈补丁，再启动 bundle；`omp update` 结束后自动重跑 `--setup` 夺回 shim。bundle 路径在生成 wrapper 时按 `BUN_INSTALL` 解析（`bun install -g` 换目录后重跑 `--setup` 即可）
 - `~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js` — 真实 bundle（已打补丁）
 - `~/.bun/bin/omp.bunx` / `~/.bun/bin/omp.exe.bak` — bun 生成 shim（8–16KB，非独立程序；被 wrapper 改名暂存）
 

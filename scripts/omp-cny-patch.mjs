@@ -57,11 +57,13 @@ const PATCH_SCRIPT = join(HOME, ".omp", "omp-cny-patch.mjs");
 const LOG_FILE = join(HOME, ".omp", "logs", "omp-cny-patch.log");
 const COST_CFG = join(HOME, ".omp", "agent", "cost.json");
 
-// bun global package — target bundle + launcher artifacts
-const PKG_DIR = join(HOME, ".bun", "install", "global", "node_modules", "@oh-my-pi", "pi-coding-agent");
+// bun install root — BUN_INSTALL overrides the default ~/.bun (same
+// convention as setup.ps1); global packages and bin shims live under it.
+const BUN_ROOT = process.env.BUN_INSTALL || join(HOME, ".bun");
+const PKG_DIR = join(BUN_ROOT, "install", "global", "node_modules", "@oh-my-pi", "pi-coding-agent");
 const BUNDLE = join(PKG_DIR, "dist", "cli.js");
 const BUNDLE_PKG = join(PKG_DIR, "package.json");
-const BIN_DIR = join(HOME, ".bun", "bin");
+const BIN_DIR = join(BUN_ROOT, "bin");
 const OMP_EXE = join(BIN_DIR, "omp.exe");
 const WRAPPER = join(BIN_DIR, "omp.cmd");
 const SHIM_BAK = join(BIN_DIR, "omp.exe.bak");
@@ -401,7 +403,9 @@ function setupWrapper() {
 	const body =
 		"@echo off\r\n" +
 		`bun "${PATCH_SCRIPT.replaceAll("/", "\\")}" --check >nul 2>&1\r\n` +
-		`bun "%USERPROFILE%\\.bun\\install\\global\\node_modules\\@oh-my-pi\\pi-coding-agent\\dist\\cli.js" %*\r\n` +
+		// Bundle path resolved at generation time (honors BUN_INSTALL), so the
+		// wrapper works on machines where bun lives outside %USERPROFILE%\.bun.
+		`bun "${BUNDLE.replaceAll("/", "\\")}" %*\r\n` +
 		// `omp update` recreates the omp.exe shim (shadowing this wrapper on
 		// the next launch) and rewrites the bundle (dropping the patch), so
 		// after an update command exits, reclaim the `omp` name and re-patch.
@@ -485,7 +489,9 @@ if (arg === "--restore") {
 
 	const out = patchBundle(target.path, rate, free);
 	if (out !== null) {
-		writeFileSync(target.path, out, "utf8");
+		// Atomic swap (rename-based) so a crash never leaves a truncated
+		// bundle — writeFileSync could.
+		replaceFile(target.path, out);
 		log(`patched ${target.path} (${Buffer.byteLength(out, "utf8")} bytes)`);
 	}
 	if (arg === "--setup") setupWrapper();
