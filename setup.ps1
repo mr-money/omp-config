@@ -9,7 +9,7 @@ $PatchScript = Join-Path $OmpHome "omp-cny-patch.mjs"
 $bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $env:USERPROFILE ".bun" }
 $OmpPkgDir = Join-Path $bunInstall "install\global\node_modules\@oh-my-pi\pi-coding-agent"
 $OmpPkgBundle = Join-Path $OmpPkgDir "dist\cli.js"
-$RecommendedOmpVersion = "18.0.11"
+$RecommendedOmpVersion = "18.1.10"
 
 function Write-Step { param($msg) Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-OK   { param($msg) Write-Host "    OK  $msg" -ForegroundColor Green }
@@ -117,6 +117,8 @@ if ($existingKeys.Count -gt 0) {
     Write-Utf8Text $dstModels $yml
     Write-OK "已回填各 provider apiKey 到最新 models.yml"
 }
+# 部署 patch 脚本到 ~/.omp（--check/--setup 的运行副本，随仓库更新）
+Copy-Item -Force (Join-Path $RepoRoot "scripts\omp-cny-patch.mjs") -Destination $PatchScript
 Write-OK "scripts/omp-cny-patch.mjs -> ~/.omp/omp-cny-patch.mjs"
 
 Write-Step "复制 skills"

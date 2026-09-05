@@ -15,7 +15,7 @@
  *
  * The sites rewritten:
  *
- *   1. Cost formatter (`xEs` ≤18.0.3, `AXn` 18.0.11+): emits `¥<usd×rate>` instead of `$<usd>` /
+ *   1. Cost formatter (`xEs` ≤18.0.3, `AXn` 18.0.11, `wAn` 18.1.10+): emits `¥<usd×rate>` instead of `$<usd>` /
  *      `S<usd>`.
  *
  *   2. `id:"cost"` status segment: adds a `freeProviders` check — when the
@@ -33,7 +33,7 @@
  *   { "symbol": "¥", "rate": 7.25, "freeProviders": ["volcengine-coding"] }
  * Missing/unreadable config falls back to ¥ / 7.25 / ["volcengine-coding"].
  *
- * Patch manifest: minimum 18.0.2, recommended 18.0.11; verified 18.0.3 + 18.0.11.
+ * Patch manifest: minimum 18.0.2, recommended 18.1.10; verified 18.0.3 + 18.0.11 + 18.1.10.
  * Version gate: omp below 18.0.2 is not supported (the 18.0.1 embedded-exe
  * layout is NOT patched). If the installed bun package is older, the script
  * first runs `bun dist/cli.js update` (the bundle's own non-interactive
@@ -44,7 +44,7 @@
  * patching continues; the anchor checks decide whether the current bundle
  * still patches.
  *
- * Verified against: omp 18.0.3 and 18.0.11 (bun global package, plain-JS bundle)
+ * Verified against: omp 18.0.3, 18.0.11 and 18.1.10 (bun global package, plain-JS bundle)
  */
 
 import { existsSync, readFileSync, writeFileSync, copyFileSync, rmSync, renameSync, mkdirSync, appendFileSync, statSync } from "node:fs";
@@ -73,9 +73,9 @@ const DEFAULT_FREE = ["volcengine-coding"];
 // Layout B floor: omp below this is not supported and gets upgraded first.
 const PATCH_MANIFEST = Object.freeze({
 	minimumVersion: "18.0.2",
-	recommendedVersion: "18.0.11",
-	verifiedVersions: ["18.0.3", "18.0.11"],
-	patchVersion: "2026.09.02.1",
+	recommendedVersion: "18.1.10",
+	verifiedVersions: ["18.0.3", "18.0.11", "18.1.10"],
+	patchVersion: "2026.09.05.1",
 });
 const MIN_BUNDLE_VER = parseVersion(PATCH_MANIFEST.minimumVersion);
 
@@ -216,49 +216,76 @@ function isBundlePatched(src) {
  * its anchors match; a partial match or no match fails loudly instead of
  * half-patching. Minifier renames drift between releases (xEs→AXn,
  * C_i→tKr, Ae→Ee, XE→iA, zl→Wl in 18.0.11, which also moved
- * `isAdvisorUsingSubscription` into the advisor branch), so the cost
+ * `isAdvisorUsingSubscription` into the advisor branch; AXn→wAn, tKr→aDi,
+ * Ee→pi∘Ae, iA→_E, Wl→ml, S→k in 18.1.10, which added a
+ * `startupPlaceholder` branch to the cost/context segments), so the cost
  * segment anchor and its injection point are per-layout too. */
 
 const COST_TAIL_V1 = 'if(!t&&!s&&!i&&!o)return{content:"",visible:!1};let l=[];if(t)l.push(xEs(t,i,S));else if(i)l.push(S.getSymbolPreset()==="nerd"&&S.icon.subscription?S.icon.subscription:"(sub)");if(o)l.push(`\\u2605 ${Ae(o)}`);if(s){let u=l.length?"+ ":"";l.push(`${u}${C_i(s,a,S)}`)}';
 const COST_ANCHOR_V1 = 'a=e.session.isAdvisorUsingSubscription?.()??!1;' + COST_TAIL_V1;
 const COST_ANCHOR_V2 = 'if(!t&&!s&&!i&&!o)return{content:"",visible:!1};let a=[];if(t)a.push(AXn(t,i,S));else if(i)a.push(S.getSymbolPreset()==="nerd"&&S.icon.subscription?S.icon.subscription:"(sub)");if(o)a.push(`\\u2605 ${Ee(o)}`);if(s){let l=a.length?"+ ":"",u=e.session.isAdvisorUsingSubscription?.()??!1;a.push(`${l}${tKr(s,u,S)}`)}';
+const COST_ANCHOR_V3 = 'if(!t&&!n&&!i&&!o)return{content:"",visible:!1};let a=[];if(t)a.push(e.startupPlaceholder?xAn(i,k):wAn(t,i,k));else if(i)a.push(k.getSymbolPreset()==="nerd"&&k.icon.subscription?k.icon.subscription:"(sub)");if(o)a.push(`\\u2605 ${pi(e,Ae(o))}`);if(n){let l=a.length?"+ ":"",u=e.session.isAdvisorUsingSubscription?.()??!1,p=e.startupPlaceholder?lDi(u,k):aDi(n,u,k);a.push(`${l}${p}`)}if(a.length===0)return{content:"",visible:!1};return{content:k.fg("statusLineCost",a.join(" ")),visible:!0}';
 // Injected before the early-return in the cost segment. In V1 this must sit
 // AFTER `a=...` (mid let-chain — statements before it would not parse); in
-// V2 the anchor starts at a statement boundary, so plain prepending works.
-const FREE_PLAN_PREFIX = '__cnySess=e.session;let fp=__cnyIsFree();if(fp)return{content:S.fg("statusLineCost","coding plan"),visible:!0};';
+// V2/V3 the anchor starts at a statement boundary, so plain prepending
+// works. `recv` is the layout's theme-object local (`S` in 18.0.x, `k` in
+// 18.1.10+) used for `fg("statusLineCost", ...)`.
+const freePlanPrefix = (recv) =>
+	`__cnySess=e.session;let fp=__cnyIsFree();if(fp)return{content:${recv}.fg("statusLineCost","coding plan"),visible:!0};`;
 
 const LAYOUTS = [
 	{
 		name: "18.0.2–18.0.3",
 		formatterName: "xEs",
+		fmtArgs: "e,t,n",
+		fmtLoc: "s",
 		costAnchor: COST_ANCHOR_V1,
-		costOut: 'a=e.session.isAdvisorUsingSubscription?.()??!1;' + FREE_PLAN_PREFIX + COST_TAIL_V1,
+		costOut: 'a=e.session.isAdvisorUsingSubscription?.()??!1;' + freePlanPrefix("S") + COST_TAIL_V1,
 		ctxAnchor: 'let r=S.fg(s,XE(t,n,e.contextTokens));return{content:zl(S.icon.context,`${r}${o}`),visible:!0}',
 		ctxWrap: "zl",
+		fgRecv: "S",
+		fgArg: "s",
 	},
 	{
 		name: "18.0.11+",
 		formatterName: "AXn",
+		fmtArgs: "e,t,n",
+		fmtLoc: "s",
 		costAnchor: COST_ANCHOR_V2,
-		costOut: FREE_PLAN_PREFIX + COST_ANCHOR_V2,
+		costOut: freePlanPrefix("S") + COST_ANCHOR_V2,
 		ctxAnchor: 'let r=S.fg(s,iA(t,n,e.contextTokens));return{content:Wl(S.icon.context,`${r}${o}`),visible:!0}',
 		ctxWrap: "Wl",
+		fgRecv: "S",
+		fgArg: "s",
+	},
+	{
+		name: "18.1.10+",
+		formatterName: "wAn",
+		fmtArgs: "e,t,s",
+		fmtLoc: "n",
+		costAnchor: COST_ANCHOR_V3,
+		costOut: freePlanPrefix("k") + COST_ANCHOR_V3,
+		ctxAnchor: 'let r=k.fg(n,e.startupPlaceholder?lG:_E(t,s,e.contextTokens));return{content:ml(k.icon.context,`${r}${o}`),visible:!0}',
+		ctxWrap: "ml",
+		fgRecv: "k",
+		fgArg: "n",
 	},
 ];
+/** Pristine cost formatter body; `args`/`loc` carry the minified param and
+ * local names (`(e,t,n){let s=` in ≤18.0.11, `(e,t,s){let n=` in 18.1.10+). */
 
-/** Pristine cost formatter body for a minified name (`$`/`S` output). */
-function fmtAnchor(name) {
-	return 'function ' + name + '(e,t,n){let s=e.toFixed(2);if(!t)return`$${s}`;if(n.getSymbolPreset()==="nerd"){let o=n.icon.subscription;return o?`${o} ${s}`:`S${s}`}return`S${s}`}';
+function fmtAnchor(name, args = "e,t,n", loc = "s") {
+	const [e, t, n] = args.split(",");
+	return 'function ' + name + '(' + args + '){let ' + loc + '=' + e + '.toFixed(2);if(!' + t + ')return`$${' + loc + '}`;if(' + n + '.getSymbolPreset()==="nerd"){let o=' + n + '.icon.subscription;return o?`${o} ${' + loc + '}`:`S${' + loc + '}`}return`S${' + loc + '}`}';
 }
 
-/** CNY cost formatter body for a minified name (¥ via __cnyFmt, name kept). */
-function fmtOut(name) {
-	return 'function ' + name + '(e,t,n){let s=e.toFixed(2),c=__cnyCfg(),r=c&&typeof c.rate==="number"?c.rate:1,v=Number(s)*r,f=__cnyFmt(v,c);if(!t)return f;if(n.getSymbolPreset()==="nerd"){let o=n.icon.subscription;return o?`${o} ${f}`:f}return f}';
+function fmtOut(name, args = "e,t,n", loc = "s") {
+	const [e, t, n] = args.split(",");
+	return 'function ' + name + '(' + args + '){let ' + loc + '=' + e + '.toFixed(2),c=__cnyCfg(),r=c&&typeof c.rate==="number"?c.rate:1,v=Number(' + loc + ')*r,f=__cnyFmt(v,c);if(!' + t + ')return f;if(' + n + '.getSymbolPreset()==="nerd"){let o=' + n + '.icon.subscription;return o?`${o} ${f}`:f}return f}';
 }
 
-/** Fixed-width context_pct replacement for a layout's content wrapper name. */
-function ctxOut(wrap) {
-	return 'let pct=Math.round((t??0));let r=S.fg(s,`${String(pct).padStart(3)}%`);return{content:' + wrap + '(S.icon.context,`${r}${o}`),visible:!0}';
+function ctxOut(L) {
+	return 'let pct=Math.round((t??0));let r=' + L.fgRecv + '.fg(' + L.fgArg + ',`${String(pct).padStart(3)}%`);return{content:' + L.ctxWrap + '(' + L.fgRecv + '.icon.context,`${r}${o}`),visible:!0}';
 }
 
 function patchBundle(bundle, rate, free) {
@@ -287,17 +314,17 @@ function patchBundle(bundle, rate, free) {
 	src = src.slice(0, injectAt) + `var __CNY_PATCH_VERSION__=${JSON.stringify(PATCH_MANIFEST.patchVersion)};\n` + HELPERS + src.slice(injectAt);
 
 	// --- Pick the known layout whose anchors ALL match (see LAYOUTS) ---
-	const layout = LAYOUTS.find((L) => src.includes(fmtAnchor(L.formatterName)) && src.includes(L.costAnchor) && src.includes(L.ctxAnchor));
+	const layout = LAYOUTS.find((L) => src.includes(fmtAnchor(L.formatterName, L.fmtArgs, L.fmtLoc)) && src.includes(L.costAnchor) && src.includes(L.ctxAnchor));
 	if (!layout) fail(`no known bundle layout matched (${LAYOUTS.map((L) => L.name).join(" / ")}) — 18.x bundle drifted; patch needs updating`);
 
 	// --- Rewrite cost formatter: ¥ via __cnyFmt (minified name preserved) ---
-	src = src.replace(fmtAnchor(layout.formatterName), fmtOut(layout.formatterName));
+	src = src.replace(fmtAnchor(layout.formatterName, layout.fmtArgs, layout.fmtLoc), fmtOut(layout.formatterName, layout.fmtArgs, layout.fmtLoc));
 
 	// --- Rewrite cost segment: freeProviders (coding plan) check ---
 	src = src.replace(layout.costAnchor, layout.costOut);
 
 	// --- Rewrite context_pct: fixed-width percent ---
-	src = src.replace(layout.ctxAnchor, ctxOut(layout.ctxWrap));
+	src = src.replace(layout.ctxAnchor, ctxOut(layout));
 
 	// Post-write sanity
 	if (src.split('id:"cost",render(').length !== 2 || !src.includes("__cnyIsFree") || !src.includes(`__CNY_PATCH_VERSION__=${JSON.stringify(PATCH_MANIFEST.patchVersion)}`)) {
