@@ -21,6 +21,7 @@ memory:
 mnemopi: 
   scoping: per-project-tagged
   embeddingVariant: multilingual
+  recallLimit: 10
 hideThinkingBlock: true
 cycleOrder: 
   - smol
