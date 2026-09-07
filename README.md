@@ -16,7 +16,8 @@ omp-config/
 │   ├── omp-cny-patch.mjs     # 状态栏人民币计价补丁（setup 复制到 ~/.omp/）
 │   └── bench-speed.ts        # 模型输出速度测试（仓库内 `bun` 运行，读 ~/.omp/agent/models.yml）
 ├── skills/                   # → ~/.omp/agent/skills/
-├── setup.ps1                 # 一键部署脚本（Windows / PowerShell）
+├── setup.ps1                 # 一键部署脚本（仓库 → ~/.omp，Windows / PowerShell）
+├── sync-from-live.ps1        # 反向同步脚本（~/.omp → 仓库，密钥不入仓）
 └── README.md
 ```
 
@@ -313,3 +314,26 @@ cd ~/omp-config && git pull
 ```
 
 `setup.ps1` 幂等：重复运行覆盖最新配置、保留已填 API Key、patch 已应用则 no-op。
+
+## 反向同步（`~/.omp` → 仓库 → GitHub）
+
+在 omp 里改了角色/配置（`/models` 等）后，把改动提升回仓库，供其他机器部署：
+
+```powershell
+.\sync-from-live.ps1            # 预检漂移 → 确认 → 同步 → commit → push
+.\sync-from-live.ps1 -NoPush    # 只 commit 不 push（网络不便时）
+.\sync-from-live.ps1 -Yes       # 跳过确认
+```
+
+行为细节：
+
+| 文件 | 处理 |
+|------|------|
+| `config.yml` | 复制后**剥离 `shellPath` / `setupVersion`**（机器本地状态，按设计不入仓） |
+| `cost.json` / `settings.json` | 直接覆盖入库 |
+| `models.yml` | **不覆盖**模型定义（仓库为源）；只做密钥防线检查——仓库中出现非 `<...>` 占位符的真实 apiKey 立即中止提交，live 中已填的真实 key 一律不入仓 |
+| `lsp.json` / `skills/` | 跳过（部署方向才探测覆盖） |
+
+- 仓库有未提交改动时拒绝运行（推方向起点必须干净），避免把无关内容混进同步提交
+- 剥离机器本地项后无实际差异则跳过提交（幂等）
+- commit message 固定格式 `sync: promote live config changes (<日期>)`
