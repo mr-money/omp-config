@@ -1,8 +1,7 @@
-providers: 
-  webSearchOrder: 
+providers:
+  webSearchOrder:
     []
-setupVersion: 1
-modelRoles: 
+modelRoles:
   plan: volcengine-coding/glm-5.3:high
   slow: volcengine-coding/glm-5.3:max
   advisor: volcengine-coding/doubao-seed-evolving:medium
@@ -17,9 +16,9 @@ modelRoles:
   Free: amd/Qwen3.8-Flash-Next:high
   Zhipu: zhipu/glm-5.3-flash:high
 defaultThinkingLevel: auto
-memory: 
+memory:
   backend: mnemopi
-mnemopi: 
+mnemopi:
   scoping: per-project-tagged
   embeddingVariant: multilingual
   recallLimit: 10
