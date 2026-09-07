@@ -2,6 +2,26 @@
 
 个人 Oh My Pi (omp) 配置仓库 — 跨机器同步配置、技能和工具。
 
+## 三层同步模型
+
+| 层级 | 路径 | 角色 |
+|------|------|------|
+| 运行层 | `~/.omp`（各机器本地） | omp 实际读取的配置；机器本地项（`shellPath`、`setupVersion`）只存在于这一层 |
+| 仓库层 | 本仓库克隆 | 同步中转，模型定义（`models.yml`）与技能以此为源 |
+| 真源层 | GitHub `origin/master` | 跨机器共同真源，所有机器从这里 pull |
+
+```mermaid
+flowchart LR
+    GH["GitHub（真源）"] -- "git pull" --> Repo["仓库克隆"]
+    Repo -- "setup.ps1（部署）" --> Live["~/.omp（运行层）"]
+    Live -- "sync-from-live.ps1（提升）" --> Repo
+    Repo -- "git push" --> GH
+```
+
+- **拉方向**（部署）：`git pull` → `setup.ps1`。覆盖式部署，密钥按 provider 保留本地已填值。
+- **推方向**（提升）：`sync-from-live.ps1`。把运行层的配置改动提升回仓库并 push，`shellPath`/`setupVersion` 自动剥离，真实 apiKey 永不入仓（详见文末「反向同步」）。
+- **分工**：`models.yml` 模型定义、`skills/`、`lsp.json` 以仓库为源（推方向不回写）；角色/记忆/计费等 `config.yml`、`cost.json`、`settings.json` 改动双向流动。
+
 ## 目录结构
 
 ```
@@ -48,7 +68,7 @@ cd omp-config
 4. 注入 API Key：**不再交互输入**——仅从环境变量（`OMP_API_KEY`/`AMD_API_KEY`/`ZHIPU_API_KEY`）读取，设了就写入对应 provider；未设置则保留 `<...>` 占位符。重部署时**按 provider 保留本地已填的真实 key**（通用扫描全部 provider，非硬编码），结尾列出仍为占位符的 provider 与文件路径，提示手动编辑
 5. 执行 `bun ~/.omp/omp-cny-patch.mjs --setup` 激活人民币计价补丁（布局 B 下同时安装自愈 wrapper）
 
-只读健康检查：`.\doctor.ps1`。它检查 Bun、OMP/bundle、配置文件、CNY patch、wrapper 及 gopls/python，不会自动修复。
+只读健康检查：`.\doctor.ps1`。它检查 Bun、OMP/bundle 版本、四个配置文件存在性、CNY patch 版本标记、wrapper 及 gopls/python 是否可用，不会自动修复。注意它只查部署健康，不查 live 与仓库之间的内容漂移——漂移用 `.\sync-from-live.ps1` 的预检查看（无差异时会明确输出"无需同步"）。
 
 ### 配置项一览
 
@@ -313,7 +333,7 @@ cd ~/omp-config && git pull
 .\setup.ps1
 ```
 
-`setup.ps1` 幂等：重复运行覆盖最新配置、保留已填 API Key、patch 已应用则 no-op。
+`setup.ps1` 幂等：重复运行覆盖最新配置、保留已填 API Key、patch 已应用则 no-op。注意：部署会以仓库版本覆盖 live `config.yml`（仅 `shellPath` 由探测回写保护）——若你在 omp 里改过配置，先跑 `.\sync-from-live.ps1` 提升再部署，否则改动会被回退。
 
 ## 反向同步（`~/.omp` → 仓库 → GitHub）
 
@@ -337,3 +357,18 @@ cd ~/omp-config && git pull
 - 仓库有未提交改动时拒绝运行（推方向起点必须干净），避免把无关内容混进同步提交
 - 剥离机器本地项后无实际差异则跳过提交（幂等）
 - commit message 固定格式 `sync: promote live config changes (<日期>)`
+
+## 日常同步节奏（推荐）
+
+```powershell
+# 改配置后（omp 内 /models 等）
+.\sync-from-live.ps1          # 提升 + push，GitHub 立即拥有最新配置
+
+# 到另一台机器
+git pull; .\setup.ps1         # 拉取 + 部署
+
+# 不确定哪边新？
+.\sync-from-live.ps1          # 无差异会明确说"无需同步"；有差异列出摘要再决定
+```
+
+多台机器同时改过的收敛方式：先 `git pull --rebase`（收别人的），再 `.\sync-from-live.ps1`（推自己的），冲突只在仓库层出现，手工解一次即可。
