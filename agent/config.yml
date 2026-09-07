@@ -7,14 +7,15 @@ modelRoles:
   slow: volcengine-coding/glm-5.3:max
   advisor: volcengine-coding/doubao-seed-evolving:medium
   commit: volcengine-coding/doubao-seed-2.0-mini:off
-  smol: volcengine-coding/doubao-seed-2.0-mini:minimal
+  smol: volcengine-coding/deepseek-v4-flash-ga-260731:auto
   default: volcengine-coding/glm-5-3-flash
   tiny: volcengine-coding/doubao-seed-2.0-mini:off
-  vision: AMD.DeepSeek-V4-Flash-Vision-Exp:medium
+  vision: volcengine-coding/doubao-seed-evolving:auto
   DeepSeek: deepseek/deepseek-v4-flash:high
   designer: volcengine-coding/doubao-seed-evolving:medium
   task: volcengine-coding/glm-5-3-flash:auto
-  Free: AMD.DeepSeek-V4-Flash-Vision-Exp:high
+  Free: amd/Qwen3.8-Flash-Next:high
+  Zhipu: zhipu/glm-5.3-flash:high
 defaultThinkingLevel: auto
 memory: 
   backend: mnemopi
@@ -23,16 +24,17 @@ mnemopi:
   embeddingVariant: multilingual
   recallLimit: 10
 hideThinkingBlock: true
-cycleOrder: 
+cycleOrder:
   - smol
   - default
   - slow
-  - DeepSeek
   - Free
-statusLine: 
-  segmentOptions: 
-    git: 
+statusLine:
+  segmentOptions:
+    git:
       showBranch: false
       showStaged: false
       showUnstaged: false
       showUntracked: false
+composer:
+  shape: band
