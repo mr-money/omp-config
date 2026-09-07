@@ -7,7 +7,7 @@
 ```
 omp-config/
 ├── agent/                    # → ~/.omp/agent/
-│   ├── config.yml            # 全局配置（modelRoles, memory, TUI；shellPath 由 setup 探测）
+│   ├── config.yml            # 全局配置（modelRoles, memory/mnemopi, TUI；shellPath 由 setup 探测）
 │   ├── models.yml            # 模型提供商；apiKey 仓库留占位符，本地手动填（setup 不再交互）
 │   ├── lsp.json              # LSP 服务器（默认 PATH 裸名，setup 探测覆盖）
 │   ├── cost.json             # 费用配置（人民币计价）
@@ -97,35 +97,55 @@ statusLine:
 | `default` | glm-5-3-flash | — | 默认主模型，日常编码 |
 | `plan` | GLM-5.3 | `high` | 任务规划阶段 |
 | `slow` | GLM-5.3 | `max` | 深度推理 / 复杂问题 |
-| `smol` | doubao-seed-2.0-mini | `minimal` | 轻量快速任务 |
+| `smol` | deepseek-v4-flash-ga-260731 | `auto` | 轻量快速任务（方舟 DeepSeek V4 Flash，TTFT/吐字速度最优） |
 | `advisor` | doubao-seed-evolving | `medium` | 顾问模式 |
 | `designer` | doubao-seed-evolving | `medium` | UI/UX 设计任务 |
 | `task` | glm-5-3-flash | `auto` | 任务子代理（委派多步任务） |
 | `commit` | doubao-seed-2.0-mini | `off` | 生成 commit message |
-| `vision` | AMD.DeepSeek-V4-Flash-Vision-Exp | `medium` | 视觉/截图理解（AMD 免费通道） |
-| `Free` | AMD.DeepSeek-V4-Flash-Vision-Exp | `high` | AMD 免费通道（免费提供商，不计费） |
-| `DeepSeek` | deepseek-v4-flash | `high` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用） |
+| `vision` | doubao-seed-evolving | `auto` | 视觉/截图理解（方舟多模态） |
+| `Free` | amd/Qwen3.8-Flash-Next | `high` | AMD 免费通道（免费提供商，不计费） |
+| `Zhipu` | zhipu/glm-5.3-flash | `high` | 智谱 GLM（自有余额付费，备用） |
+| `DeepSeek` | deepseek-v4-flash | `high` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用，不在 `cycleOrder` 中） |
 
 **思考档位循环 (`cycleOrder`)**: `smol` → `default` → `slow` → `Free`，逐级升档。
+
+### 长期记忆 (`config.yml` → `memory` / `mnemopi`)
+
+```yaml
+memory:
+  backend: mnemopi
+mnemopi:
+  scoping: per-project-tagged   # 写入项目库；召回时合并共享全局库
+  embeddingVariant: multilingual # intfloat/multilingual-e5-large（本地 ONNX，中文语义召回）
+  recallLimit: 10                # 每次召回最多注入的记忆条数（默认 8）
+```
+
+设计依据（源码验证，pi-mnemopi 18.x）：
+
+- **`per-project-tagged` 优于 `per-project`**：写入项目隔离，召回还能带上全局记忆——跨项目通用经验（如 AMD 网关踩坑）仍可浮现。
+- **不要开 `noEmbeddings: true`**：FTS5 默认 `unicode61` tokenizer 对中文按整句切分（无分词），关掉向量召回会让中文查询只能逐字命中；`multilingual` e5 本地推理无网络依赖、无费用，是中文召回主力。
+- **`llmMode: smol`**：事实抽取/整理走 `tiny`→`smol` 角色（doubao-seed-2.0-mini），免费额度内。
+- **consolidation 需手动触发**：正常退出只做轻量 drain，working → episodic 晋级与图谱构建仅在 `/memory enqueue` 时发生（且只整理 >12h 的行）；重要会话结束前跑一次。
+- **进阶开关保持关闭**：`polyphonicRecall` 的 graph voice 依赖 consolidation 产生的 `gists`/`graph_edges`（未触发时恒为空）；`proactiveLinking` 的实体抽取为英文偏置正则，中文收益微弱。
 
 ### 模型提供商 (`models.yml`)
 
 内置火山引擎大模型 API（方舟，coding plan 订阅制）：
 - **glm-5-3-flash** — 默认模型（1M 上下文）
 - **glm-5.3** — 规划 / 慢速深度推理（1M 上下文）
-- **deepseek-v4-flash-ga-260731** — 备用默认（1M 上下文，原默认模型）
-- **doubao-seed-2.0-mini** — 轻量 / 视觉 / commit 模型
-- **doubao-seed-evolving** — 顾问 / 设计（advisor、designer 角色）（1M 上下文）
+- **deepseek-v4-flash-ga-260731** — `smol` 角色主力（1M 上下文；TTFT ~440ms、~86 tok/s，全表最快）
+- **doubao-seed-2.0-mini** — 轻量 / commit / mnemopi 记忆抽取（`tiny`/`commit` 角色）
+- **doubao-seed-evolving** — 顾问 / 设计 / 视觉（`advisor`、`designer`、`vision` 角色）（1M 上下文，多模态）
 
 AMD 免费通道（`amd` provider，AMD Radeon 开发者平台，OpenAI 兼容）：
-- **DeepSeek-V4-Flash-Vision-Exp** — 视觉/Free 角色（1M 上下文，支持文本+图像，`reasoning`）
+- **DeepSeek-V4-Flash-Vision-Exp** — 视觉模型（1M 上下文，支持文本+图像，`reasoning`；曾用于 `vision`/`Free` 角色，因 TTFT 10–50s 已淡出高频角色）
 - **DeepSeek-V4-Flash** — 纯文本（1M 上下文，`reasoning`）
-- **Qwen3.8-Flash-Next** — 纯文本（262K 上下文，`reasoning`）
+- **Qwen3.8-Flash-Next** — `Free` 角色（262K 上下文，纯文本，`reasoning`）
 
 `amd` provider 为**免费额度**，计入 `freeProviders`，状态栏显示 `coding plan` 不计费；`apiKey`（`rc-` 前缀）为 AMD 开发者平台 key，仓库中保持占位脱敏，部署后本地手动编辑 `~/.omp/agent/models.yml` 填入。
 
 智谱 GLM（`zhipu` provider，智谱开放平台，OpenAI 兼容）：
-- **glm-5.3-flash** — 多模态（文本+图像），1M 上下文，131K 输出上限，`reasoning`（思考档位 `low/high/max`，默认 `max`）
+- **glm-5.3-flash** — `Zhipu` 角色备用；多模态（文本+图像），1M 上下文，131K 输出上限，`reasoning`（思考档位 `low/high/max`，默认 `max`）
 - `baseUrl: https://open.bigmodel.cn/api/paas/v4`，请求自动落到 `/chat/completions`；`open.bigmodel.cn` 主机会被自动识别为智谱，走 `zai` thinking 方言（`thinking.type: enabled` + `reasoning_effort`，工具调用时自动开启 `tool_stream`）
 - 价格（元/百万 tokens）：输入 **0.8**、输出 **2.8**、缓存命中 **0.23**、缓存写入 **0.8**。`models.yml` 中按美元计价（`元 ÷ 7.25`）：`input 0.110345 / output 0.386207 / cacheRead 0.031724 / cacheWrite 0.110345`，状态栏自动按 `rate` 换算回人民币显示。
 
