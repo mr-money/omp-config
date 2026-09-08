@@ -325,6 +325,8 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 
 另含 **caveman**（极简沟通模式）— 源自 [juliusbrussee/caveman](https://github.com/JuliusBrussee/caveman)，随其余技能一同部署到 `~/.omp/agent/skills/`。omp 的 native 技能源（`~/.omp/agent/skills/`）优先级高于 codex 源（`~/.codex/skills/`），同名技能会优先从 native 加载。
 
+另含 **archify** — 源自 [tt-a1i/archify](https://github.com/tt-a1i/archify)（MIT），架构/工作流/时序/数据流/生命周期五类交互式 HTML 图表生成技能，含 Node CLI 渲染器（依赖 `ajv`/`parse5`/`saxes`/`simple-icons`，仓库内已 `npm install --omit=dev`，`node_modules/` 被 gitignore）。用法：`node bin/archify.mjs <type> <json> <out.html>`。
+
 ## 更新
 
 ```powershell
