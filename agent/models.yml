@@ -78,6 +78,26 @@ providers:
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens
+  deepseek:
+    modelOverrides:
+      deepseek-v4-flash:
+        cost:
+          input: 2.0
+          output: 8.0
+          cacheRead: 0.04
+          cacheWrite: 2.0
+      deepseek-v4-flash-vision-exp:
+        cost:
+          input: 2.0
+          output: 8.0
+          cacheRead: 0.04
+          cacheWrite: 2.0
+      deepseek-v4-pro:
+        cost:
+          input: 9.0
+          output: 27.0
+          cacheRead: 0.3
+          cacheWrite: 9.0
   zhipu:
     baseUrl: https://open.bigmodel.cn/api/paas/v4
     api: openai-completions
@@ -91,10 +111,10 @@ providers:
         maxTokens: 131072
         reasoning: true
         cost:
-          input: 0.110345
-          output: 0.386207
-          cacheRead: 0.031724
-          cacheWrite: 0.110345
+          input: 0.8
+          output: 2.8
+          cacheRead: 0.23
+          cacheWrite: 0.8
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens

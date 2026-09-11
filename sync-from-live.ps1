@@ -3,7 +3,7 @@
 #
 # 同步内容：
 #   config.yml     剥离机器本地项（shellPath / setupVersion）后入库
-#   cost.json / settings.json   直接覆盖入库
+#   settings.json   直接覆盖入库
 #   models.yml     不覆盖模型定义；仅把仓库占位符反视为"忽略"，live 中已填的真实 key 一律丢弃（不入仓）
 #   lsp.json / skills/          跳过（仓库为源，部署方向才探测覆盖）
 #
@@ -32,7 +32,7 @@ function Write-Utf8Text {
 
 # 1. 前置校验
 Write-Step "校验前置依赖"
-foreach ($f in @("config.yml", "cost.json", "settings.json")) {
+foreach ($f in @("config.yml", "settings.json")) {
     $live = Join-Path $AgentDir $f
     if (-not (Test-Path $live)) { Write-Fail "live 缺少 $f：$live"; exit 1 }
 }
@@ -52,7 +52,7 @@ if ($dirty) {
 Write-Step "漂移预检（live → 仓库）"
 $diffSummary = @()
 $hasDrift = $false
-foreach ($f in @("config.yml", "cost.json", "settings.json")) {
+foreach ($f in @("config.yml", "settings.json")) {
     $live = Join-Path $AgentDir $f
     $repo = Join-Path $RepoRoot "agent\$f"
     if (-not (Test-Path $repo)) { $hasDrift = $true; $diffSummary += "  $f : 仓库无此文件（新增）"; continue }
@@ -98,8 +98,8 @@ $cfg = [regex]::Replace($cfg, '(?m)^setupVersion:.*\r?\n?', "")
 Write-Utf8Text $cfgDst $cfg
 Write-OK "agent/config.yml（已剥离 shellPath / setupVersion）"
 
-# cost.json / settings.json：直接覆盖
-foreach ($f in @("cost.json", "settings.json")) {
+# settings.json：直接覆盖
+foreach ($f in @("settings.json")) {
     Copy-Item -Force (Join-Path $AgentDir $f) (Join-Path $RepoRoot "agent\$f")
     Write-OK "agent/$f"
 }
@@ -126,7 +126,7 @@ if (-not $changes) {
     Write-OK "剥离机器本地项后无实际差异（live 与仓库仅 shellPath/setupVersion 不同）"
     exit 0
 }
-git -C $RepoRoot add agent/config.yml agent/cost.json agent/settings.json
+git -C $RepoRoot add agent/config.yml agent/settings.json
 $stamp = Get-Date -Format "yyyy-MM-dd"
 git -C $RepoRoot commit -m "sync: promote live config changes ($stamp)"
 if ($LASTEXITCODE -ne 0) { Write-Fail "git commit 失败"; exit 1 }

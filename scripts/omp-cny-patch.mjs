@@ -1,7 +1,9 @@
 #!/usr/bin/env bun
 /**
- * omp CNY cost patch — status-line cost segment `$` -> ¥ (CNY, USD×rate),
- * with `coding plan` for subscription providers.
+ * omp CNY cost patch — status-line cost tiers:
+ *   subscription provider -> `coding plan`
+ *   no/zero pricing       -> `free`
+ *   priced model          -> `¥<CNY>` (models.yml cost IS the CNY price)
  *
  * Target: omp 18.0.2+ bun global package (current). `omp.exe` is a small bun
  * shim launcher that reads `omp.bunx` and runs `dist/cli.js` (plain JS)
@@ -15,23 +17,29 @@
  *
  * The sites rewritten:
  *
- *   1. Cost formatter (`xEs` ≤18.0.3, `AXn` 18.0.11, `wAn` 18.1.10+): emits `¥<usd×rate>` instead of `$<usd>` /
- *      `S<usd>`.
+ *   1. Cost formatter (`xEs` ≤18.0.3, `AXn` 18.0.11, `wAn` 18.1.10+): only
+ *      re-symbols the price — `$` → `¥` (and `$x.xxxx`-style precision
+ *      kept). NO rate multiplication: models.yml `cost` blocks now carry
+ *      CNY prices directly (￥/百万 tokens), including for built-in
+ *      providers via native `providers.<id>.modelOverrides`.
  *
- *   2. `id:"cost"` status segment: adds a `freeProviders` check — when the
- *      active model's provider is a subscription provider (default
- *      `volcengine-coding`), the segment shows `coding plan` instead of a
- *      token price and suppresses the advisor tail.
+ *   2. `id:"cost"` status segment: three-tier check — when the active
+ *      model's provider is a subscription provider (freeProviders) the
+ *      segment shows `coding plan` and suppresses the advisor tail; when
+ *      the active model has no/zero pricing it shows `free`; otherwise it
+ *      falls through to the ¥ formatter above.
  *
  *   3. `id:"context_pct"` status segment: drops the `xx.x%/window` double
- *      figure and keeps only the usage percent plus the auto-compact spinner.
- *      The percent is an integer right-aligned to a fixed 4-column field
- *      (`  0%`..`100%`) so the segment never changes width.
+ *      figure and keeps only the usage percent plus the auto-compact
+ *      spinner. The percent is an integer right-aligned to a fixed
+ *      4-column field (`  0%`..`100%`) so the segment never changes width.
  *
- * Rate / freeProviders come from `~/.omp/agent/cost.json` (single source of
- * truth):
- *   { "symbol": "¥", "rate": 7.25, "freeProviders": ["volcengine-coding"] }
- * Missing/unreadable config falls back to ¥ / 7.25 / ["volcengine-coding"].
+ * Pricing source of truth is the model object omp itself resolved for the
+ * session (`session.state.model.cost`): models.yml `cost` blocks for
+ * configured providers, `providers.<id>.modelOverrides.<model>.cost` for
+ * built-in providers, or the built-in USD catalog when no override exists.
+ * No `cost.json` — the script ships zero runtime config; defaults are
+ * `freeProviders = ["volcengine-coding"]` (see DEFAULT_FREE below).
  *
  * Patch manifest: minimum 18.0.2, recommended 18.1.10; verified 18.0.3 + 18.0.11 + 18.1.10.
  * Version gate: omp below 18.0.2 is not supported (the 18.0.1 embedded-exe
@@ -46,7 +54,6 @@
  *
  * Verified against: omp 18.0.3, 18.0.11 and 18.1.10 (bun global package, plain-JS bundle)
  */
-
 import { existsSync, readFileSync, writeFileSync, copyFileSync, rmSync, renameSync, mkdirSync, appendFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, dirname } from "node:path";
@@ -55,7 +62,6 @@ import { execFileSync } from "node:child_process";
 const HOME = homedir();
 const PATCH_SCRIPT = join(HOME, ".omp", "omp-cny-patch.mjs");
 const LOG_FILE = join(HOME, ".omp", "logs", "omp-cny-patch.log");
-const COST_CFG = join(HOME, ".omp", "agent", "cost.json");
 
 // bun install root — BUN_INSTALL overrides the default ~/.bun (same
 // convention as setup.ps1); global packages and bin shims live under it.
@@ -64,12 +70,10 @@ const PKG_DIR = join(BUN_ROOT, "install", "global", "node_modules", "@oh-my-pi",
 const BUNDLE = join(PKG_DIR, "dist", "cli.js");
 const BUNDLE_PKG = join(PKG_DIR, "package.json");
 const BIN_DIR = join(BUN_ROOT, "bin");
-const OMP_EXE = join(BIN_DIR, "omp.exe");
-const WRAPPER = join(BIN_DIR, "omp.cmd");
-const SHIM_BAK = join(BIN_DIR, "omp.exe.bak");
 
-// Defaults used when cost.json is missing or unreadable (also repo defaults).
-const DEFAULT_RATE = 7.25;
+// Status-line tier defaults: providers listed here are subscription-based
+// ("coding plan"); everything else shows `free` (no/zero pricing) or the
+// ¥ price from the resolved model cost.
 const DEFAULT_FREE = ["volcengine-coding"];
 
 // Layout B floor: omp below this is not supported and gets upgraded first.
@@ -77,7 +81,7 @@ const PATCH_MANIFEST = Object.freeze({
 	minimumVersion: "18.0.2",
 	recommendedVersion: "18.1.10",
 	verifiedVersions: ["18.0.3", "18.0.11", "18.1.10"],
-	patchVersion: "2026.09.05.1",
+	patchVersion: "2026.09.11.1",
 });
 const MIN_BUNDLE_VER = parseVersion(PATCH_MANIFEST.minimumVersion);
 
@@ -178,40 +182,32 @@ function fail(msg) {
 	process.exit(1);
 }
 
-/** Read rate + freeProviders from cost.json; fall back to defaults. */
-function loadCostCfg() {
-	try {
-		const cfg = JSON.parse(readFileSync(COST_CFG, "utf8"));
-		const rate = typeof cfg.rate === "number" && cfg.rate > 0 ? cfg.rate : DEFAULT_RATE;
-		const free = Array.isArray(cfg.freeProviders) && cfg.freeProviders.length > 0 ? cfg.freeProviders : DEFAULT_FREE;
-		return { rate, free };
-	} catch {
-		return { rate: DEFAULT_RATE, free: DEFAULT_FREE };
-	}
-}
-
 /* ------------------------------------------------------------------ */
 /* Layout B: plain-JS bundle — runtime helper injection + string swap. */
 /* ------------------------------------------------------------------ */
 
 /**
- * Runtime helpers injected at the bundle head. Read cost.json at runtime
- * (the render functions have no other way to reach it). `__cnySess` is set
- * by the cost segment render each tick so `__cnyIsFree` can inspect the
- * active model's provider without touching the render closure.
+ * Runtime helpers injected at the bundle head. `__cnySess` is set by the
+ * cost segment render each tick so `__cnyTier` can inspect the active
+ * model without touching the render closure. Tier resolution:
+ *   1. provider in freeProviders            -> "plan"  (`coding plan`)
+ *   2. model cost missing or all zero       -> "free"  (same predicate omp
+ *      itself uses to treat a model as unpriced)
+ *   3. otherwise                            -> "paid"  (¥ formatter)
+ * The cost object is the one omp resolved for the session (models.yml
+ * `cost`, native `modelOverrides`, or the built-in catalog).
  */
-const HELPERS = `import{readFileSync as __cnyRead}from"node:fs";
-var __cnyCfgCache=void 0,__cnySess=void 0;
-function __cnyCfg(){if(__cnyCfgCache!==void 0)return __cnyCfgCache;var b=process.env.PI_CODING_AGENT_DIR;var base=b?b:((process.env.USERPROFILE||process.env.HOME||"")+"/.omp/agent");var c=null;try{var t=__cnyRead(base+"/cost.json","utf8");c=JSON.parse(t)}catch(e){c=null}__cnyCfgCache=c;return c}
-function __cnyFmt(v,c){var s=c&&c.symbol?c.symbol:"$";if(v<0.01)return s+v.toFixed(4);if(v<1)return s+v.toFixed(3);return s+v.toFixed(2)}
+const HELPERS = `var __cnySess=void 0;
+var __cnyFreeProviders=["volcengine-coding","amd"];
+function __cnyTier(){var m=null;try{m=(typeof __cnySess!=="undefined"&&__cnySess)?__cnySess.state&&__cnySess.state.model:null}catch(e){}if(!m||!m.provider)return"free";if(__cnyFreeProviders.indexOf(m.provider)>=0)return"plan";var c=m.cost;if(!c||typeof c!=="object")return"free";var i=c.input,o=c.output,r=c.cacheRead,w=c.cacheWrite;var z=function(v){return!(typeof v==="number"&&v>0)};if(z(i)&&z(o)&&z(r)&&z(w))return"free";return"paid"}
+function __cnyFmt(v){var s="\\u00a5";if(v<0.01)return s+v.toFixed(4);if(v<1)return s+v.toFixed(3);return s+v.toFixed(2)}
 var __cnyOrigFetch=globalThis.fetch;
 globalThis.fetch=function(u,o){try{if(o&&typeof o.body==="string"&&String(u).includes("developer.amd.com.cn")){var j=JSON.parse(o.body);if(j&&j.thinking!==undefined){delete j.thinking;o=Object.assign({},o,{body:JSON.stringify(j)})}}}catch(e){}return __cnyOrigFetch.call(this,u,o)};
-function __cnyIsFree(){var c=__cnyCfg();if(!c)return false;var f=c.freeProviders;if(!f||!f.length)return false;var m=null;try{m=(typeof __cnySess!=="undefined"&&__cnySess)?__cnySess.state&&__cnySess.state.model:null}catch(e){}if(!m||!m.provider)return false;return f.indexOf(m.provider)>=0}
 `;
 
 /** True if the bundle already carries the CNY patch markers. */
 function isBundlePatched(src) {
-	return src.includes(`__CNY_PATCH_VERSION__=${JSON.stringify(PATCH_MANIFEST.patchVersion)}`) && src.includes("__cnyIsFree") && src.includes("__cnyFmt");
+	return src.includes(`__CNY_PATCH_VERSION__=${JSON.stringify(PATCH_MANIFEST.patchVersion)}`) && src.includes("__cnyTier") && src.includes("__cnyFmt");
 }
 
 /* Known bundle layouts, tried in order. A layout applies only when ALL of
@@ -232,17 +228,18 @@ const COST_ANCHOR_V3 = 'if(!t&&!n&&!i&&!o)return{content:"",visible:!1};let a=[]
 // V2/V3 the anchor starts at a statement boundary, so plain prepending
 // works. `recv` is the layout's theme-object local (`S` in 18.0.x, `k` in
 // 18.1.10+) used for `fg("statusLineCost", ...)`.
-const freePlanPrefix = (recv) =>
-	`__cnySess=e.session;let fp=__cnyIsFree();if(fp)return{content:${recv}.fg("statusLineCost","coding plan"),visible:!0};`;
+// Tier short-circuit: "plan" shows `coding plan`, "free" shows `free`;
+// "paid" falls through to the regular cost formatter (¥ price).
+const tierPrefix = (recv) =>
+	`__cnySess=e.session;let tier=__cnyTier();if(tier==="plan")return{content:${recv}.fg("statusLineCost","coding plan"),visible:!0};if(tier==="free")return{content:${recv}.fg("statusLineCost","free"),visible:!0};`;
 
 const LAYOUTS = [
 	{
 		name: "18.0.2–18.0.3",
 		formatterName: "xEs",
 		fmtArgs: "e,t,n",
-		fmtLoc: "s",
+		costOut: 'a=e.session.isAdvisorUsingSubscription?.()??!1;' + tierPrefix("S") + COST_TAIL_V1,
 		costAnchor: COST_ANCHOR_V1,
-		costOut: 'a=e.session.isAdvisorUsingSubscription?.()??!1;' + freePlanPrefix("S") + COST_TAIL_V1,
 		ctxAnchor: 'let r=S.fg(s,XE(t,n,e.contextTokens));return{content:zl(S.icon.context,`${r}${o}`),visible:!0}',
 		ctxWrap: "zl",
 		fgRecv: "S",
@@ -252,9 +249,8 @@ const LAYOUTS = [
 		name: "18.0.11+",
 		formatterName: "AXn",
 		fmtArgs: "e,t,n",
-		fmtLoc: "s",
+		costOut: tierPrefix("S") + COST_ANCHOR_V2,
 		costAnchor: COST_ANCHOR_V2,
-		costOut: freePlanPrefix("S") + COST_ANCHOR_V2,
 		ctxAnchor: 'let r=S.fg(s,iA(t,n,e.contextTokens));return{content:Wl(S.icon.context,`${r}${o}`),visible:!0}',
 		ctxWrap: "Wl",
 		fgRecv: "S",
@@ -264,9 +260,8 @@ const LAYOUTS = [
 		name: "18.1.10+",
 		formatterName: "wAn",
 		fmtArgs: "e,t,s",
-		fmtLoc: "n",
+		costOut: tierPrefix("k") + COST_ANCHOR_V3,
 		costAnchor: COST_ANCHOR_V3,
-		costOut: freePlanPrefix("k") + COST_ANCHOR_V3,
 		ctxAnchor: 'let r=k.fg(n,e.startupPlaceholder?lG:_E(t,s,e.contextTokens));return{content:ml(k.icon.context,`${r}${o}`),visible:!0}',
 		ctxWrap: "ml",
 		fgRecv: "k",
@@ -280,17 +275,16 @@ function fmtAnchor(name, args = "e,t,n", loc = "s") {
 	const [e, t, n] = args.split(",");
 	return 'function ' + name + '(' + args + '){let ' + loc + '=' + e + '.toFixed(2);if(!' + t + ')return`$${' + loc + '}`;if(' + n + '.getSymbolPreset()==="nerd"){let o=' + n + '.icon.subscription;return o?`${o} ${' + loc + '}`:`S${' + loc + '}`}return`S${' + loc + '}`}';
 }
-
 function fmtOut(name, args = "e,t,n", loc = "s") {
 	const [e, t, n] = args.split(",");
-	return 'function ' + name + '(' + args + '){let ' + loc + '=' + e + '.toFixed(2),c=__cnyCfg(),r=c&&typeof c.rate==="number"?c.rate:1,v=Number(' + loc + ')*r,f=__cnyFmt(v,c);if(!' + t + ')return f;if(' + n + '.getSymbolPreset()==="nerd"){let o=' + n + '.icon.subscription;return o?`${o} ${f}`:f}return f}';
+	return 'function ' + name + '(' + args + '){let ' + loc + '=' + e + '.toFixed(2),f=__cnyFmt(Number(' + loc + '));if(!' + t + ')return f;if(' + n + '.getSymbolPreset()==="nerd"){let o=' + n + '.icon.subscription;return o?`${o} ${f}`:f}return f}';
 }
 
 function ctxOut(L) {
 	return 'let pct=Math.round((t??0));let r=' + L.fgRecv + '.fg(' + L.fgArg + ',`${String(pct).padStart(3)}%`);return{content:' + L.ctxWrap + '(' + L.fgRecv + '.icon.context,`${r}${o}`),visible:!0}';
 }
 
-function patchBundle(bundle, rate, free) {
+function patchBundle(bundle) {
 	let src = readFileSync(bundle, "utf8");
 	if (isBundlePatched(src)) {
 		log(`already patched — nothing to do (${bundle})`);
@@ -301,11 +295,11 @@ function patchBundle(bundle, rate, free) {
 	if (!src.includes('id:"context_pct"')) fail("context_pct segment not found — 18.x bundle drifted; patch needs updating");
 
 	// A foreign/old patch must be removed from the pristine copy before applying.
-	if (src.includes("__cnyIsFree") || src.includes("__cnyFmt")) {
+	if (src.includes("__cnyIsFree") || src.includes("__cnyTier")) {
 		if (!existsSync(bundle + ".orig")) fail("old CNY patch found but no pristine backup exists");
 		log("old or mismatched CNY patch found — restoring pristine bundle first");
 		src = readFileSync(bundle + ".orig", "utf8");
-		if (src.includes("__cnyIsFree") || src.includes("__cnyFmt")) fail("pristine backup is already patched; refusing partial patch");
+		if (src.includes("__cnyIsFree") || src.includes("__cnyTier")) fail("pristine backup is already patched; refusing partial patch");
 	}
 
 	// --- Inject helpers at head (after the `// @bun` marker) ---
@@ -319,17 +313,17 @@ function patchBundle(bundle, rate, free) {
 	const layout = LAYOUTS.find((L) => src.includes(fmtAnchor(L.formatterName, L.fmtArgs, L.fmtLoc)) && src.includes(L.costAnchor) && src.includes(L.ctxAnchor));
 	if (!layout) fail(`no known bundle layout matched (${LAYOUTS.map((L) => L.name).join(" / ")}) — 18.x bundle drifted; patch needs updating`);
 
-	// --- Rewrite cost formatter: ¥ via __cnyFmt (minified name preserved) ---
+	// --- Rewrite cost formatter: ¥ symbol (minified name preserved) ---
 	src = src.replace(fmtAnchor(layout.formatterName, layout.fmtArgs, layout.fmtLoc), fmtOut(layout.formatterName, layout.fmtArgs, layout.fmtLoc));
 
-	// --- Rewrite cost segment: freeProviders (coding plan) check ---
+	// --- Rewrite cost segment: tier check (coding plan / free / priced) ---
 	src = src.replace(layout.costAnchor, layout.costOut);
 
 	// --- Rewrite context_pct: fixed-width percent ---
 	src = src.replace(layout.ctxAnchor, ctxOut(layout));
 
 	// Post-write sanity
-	if (src.split('id:"cost",render(').length !== 2 || !src.includes("__cnyIsFree") || !src.includes(`__CNY_PATCH_VERSION__=${JSON.stringify(PATCH_MANIFEST.patchVersion)}`)) {
+	if (src.split('id:"cost",render(').length !== 2 || !src.includes("__cnyTier") || !src.includes(`__CNY_PATCH_VERSION__=${JSON.stringify(PATCH_MANIFEST.patchVersion)}`)) {
 		fail("sanity check failed after patching — bundle left unchanged, please report");
 	}
 	return src;
@@ -484,10 +478,7 @@ if (arg === "--restore") {
 	}
 	ensureBackup(target.path, target.orig);
 
-	const { rate, free } = loadCostCfg();
-	log(`cost config: rate=${rate} freeProviders=[${free.join(", ")}] target=${target.kind}`);
-
-	const out = patchBundle(target.path, rate, free);
+	const out = patchBundle(target.path);
 	if (out !== null) {
 		// Atomic swap (rename-based) so a crash never leaves a truncated
 		// bundle — writeFileSync could.

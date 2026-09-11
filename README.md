@@ -20,7 +20,7 @@ flowchart LR
 
 - **拉方向**（部署）：`git pull` → `setup.ps1`。覆盖式部署，密钥按 provider 保留本地已填值。
 - **推方向**（提升）：`sync-from-live.ps1`。把运行层的配置改动提升回仓库并 push，`shellPath`/`setupVersion` 自动剥离，真实 apiKey 永不入仓（详见文末「反向同步」）。
-- **分工**：`models.yml` 模型定义、`skills/`、`lsp.json` 以仓库为源（推方向不回写）；角色/记忆/计费等 `config.yml`、`cost.json`、`settings.json` 改动双向流动。
+- **分工**：`models.yml` 模型定义与计价、`skills/`、`lsp.json` 以仓库为源（推方向不回写）；`config.yml`、`settings.json` 等其余配置双向流动。
 
 ## 目录结构
 
@@ -28,12 +28,11 @@ flowchart LR
 omp-config/
 ├── agent/                    # → ~/.omp/agent/
 │   ├── config.yml            # 全局配置（modelRoles, memory/mnemopi, TUI；shellPath 由 setup 探测）
-│   ├── models.yml            # 模型提供商；apiKey 仓库留占位符，本地手动填（setup 不再交互）
 │   ├── lsp.json              # LSP 服务器（默认 PATH 裸名，setup 探测覆盖）
-│   ├── cost.json             # 费用配置（人民币计价）
+│   ├── models.yml            # 模型提供商 + 人民币计价；apiKey 仓库留占位符，本地手动填（setup 不再交互）
 │   └── settings.json         # 持久化设置
 ├── scripts/
-│   ├── omp-cny-patch.mjs     # 状态栏人民币计价补丁（setup 复制到 ~/.omp/）
+│   ├── omp-cny-patch.mjs     # 状态栏计价三态补丁（coding plan / free / ¥ 人民币）（setup 复制到 ~/.omp/）
 │   └── bench-speed.ts        # 模型输出速度测试（仓库内 `bun` 运行，读 ~/.omp/agent/models.yml）
 ├── skills/                   # → ~/.omp/agent/skills/
 ├── setup.ps1                 # 一键部署脚本（仓库 → ~/.omp，Windows / PowerShell）
@@ -66,9 +65,9 @@ cd omp-config
 2. 复制 `agent/` → `~/.omp/agent/`、`skills/` → `~/.omp/agent/skills/`、`scripts/omp-cny-patch.mjs` → `~/.omp/`
 3. 探测本机 pwsh / gopls / python 路径，写回对应配置
 4. 注入 API Key：**不再交互输入**——仅从环境变量（`OMP_API_KEY`/`AMD_API_KEY`/`ZHIPU_API_KEY`）读取，设了就写入对应 provider；未设置则保留 `<...>` 占位符。重部署时**按 provider 保留本地已填的真实 key**（通用扫描全部 provider，非硬编码），结尾列出仍为占位符的 provider 与文件路径，提示手动编辑
-5. 执行 `bun ~/.omp/omp-cny-patch.mjs --setup` 激活人民币计价补丁（布局 B 下同时安装自愈 wrapper）
+5. 执行 `bun ~/.omp/omp-cny-patch.mjs --setup` 激活状态栏计价补丁（布局 B 下同时安装自愈 wrapper）
 
-只读健康检查：`.\doctor.ps1`。它检查 Bun、OMP/bundle 版本、四个配置文件存在性、CNY patch 版本标记、wrapper 及 gopls/python 是否可用，不会自动修复。注意它只查部署健康，不查 live 与仓库之间的内容漂移——漂移用 `.\sync-from-live.ps1` 的预检查看（无差异时会明确输出"无需同步"）。
+只读健康检查：`.\doctor.ps1`。它检查 Bun、OMP/bundle 版本、三个配置文件存在性、CNY patch 版本标记、wrapper 及 gopls/python 是否可用，不会自动修复。注意它只查部署健康，不查 live 与仓库之间的内容漂移——漂移用 `.\sync-from-live.ps1` 的预检查看（无差异时会明确输出"无需同步"）。
 
 ### 配置项一览
 
@@ -83,7 +82,7 @@ cd omp-config
 ### 验证
 
 ```powershell
-# 启动 omp，检查状态栏显示 ¥ 符号 / coding plan（订阅制提供商）
+# 启动 omp，检查状态栏 cost 段三态：coding plan（订阅）/ free（未定价）/ ¥xx（人民币计价）
 omp
 # 或直接执行 bundle（布局 B，不经过 wrapper）
 bun "%USERPROFILE%\.bun\install\global\node_modules\@oh-my-pi\pi-coding-agent\dist\cli.js"
@@ -163,14 +162,14 @@ AMD 免费通道（`amd` provider，AMD Radeon 开发者平台，OpenAI 兼容�
 - **DeepSeek-V4-Flash** — 纯文本（1M 上下文，`reasoning`）
 - **Qwen3.8-Flash-Next** — `Free` 角色（262K 上下文，纯文本，`reasoning`）
 
-`amd` provider 为**免费额度**，计入 `freeProviders`，状态栏显示 `coding plan` 不计费；`apiKey`（`rc-` 前缀）为 AMD 开发者平台 key，仓库中保持占位脱敏，部署后本地手动编辑 `~/.omp/agent/models.yml` 填入。
+`amd` provider 为**免费额度**，计入补丁的 `freeProviders`（订阅/免费通道清单），状态栏显示 `coding plan` 不计费；`apiKey`（`rc-` 前缀）为 AMD 开发者平台 key，仓库中保持占位脱敏，部署后本地手动编辑 `~/.omp/agent/models.yml` 填入。
 
 智谱 GLM（`zhipu` provider，智谱开放平台，OpenAI 兼容）：
 - **glm-5.3-flash** — `Zhipu` 角色备用；多模态（文本+图像），1M 上下文，131K 输出上限，`reasoning`（思考档位 `low/high/max`，默认 `max`）
 - `baseUrl: https://open.bigmodel.cn/api/paas/v4`，请求自动落到 `/chat/completions`；`open.bigmodel.cn` 主机会被自动识别为智谱，走 `zai` thinking 方言（`thinking.type: enabled` + `reasoning_effort`，工具调用时自动开启 `tool_stream`）
-- 价格（元/百万 tokens）：输入 **0.8**、输出 **2.8**、缓存命中 **0.23**、缓存写入 **0.8**。`models.yml` 中按美元计价（`元 ÷ 7.25`）：`input 0.110345 / output 0.386207 / cacheRead 0.031724 / cacheWrite 0.110345`，状态栏自动按 `rate` 换算回人民币显示。
+- 价格（元/百万 tokens）：输入 **0.8**、输出 **2.8**、缓存命中 **0.23**、缓存写入 **0.8**。`models.yml` `cost` 块**直接写人民币价**，状态栏原样显示 `¥` 价格。
 
-> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色与 `cost.json` 定价指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，无需在 `models.yml` 配置——外部配置仅含火山 `volcengine-coding`、AMD `amd` 与智谱 `zhipu`。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。
+> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，`models.yml` 中仅需一个 `deepseek:` 块写 `modelOverrides` 覆盖内置美元价为本项目的人民币价（见 `agent/models.yml`）。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。
 
 ### 新增模型提供商节点（`models.yml`）
 
@@ -190,11 +189,11 @@ providers:
         contextWindow: 1000000     # ⑧ 上下文窗口（token）
         maxTokens: 65536           # ⑨ 输出上限（token）
         reasoning: true            # ⑩ 思考模型才写 true（自动派生思考档位）
-        cost:                      # ⑪ 计价（美元/百万 tokens）：状态栏价格 = cost × rate 换算人民币
-          input: 0.110345          #    输入价（人民币价 ÷ 汇率，如 0.8 ÷ 7.25）
-          output: 0.386207         #    输出价（2.8 ÷ 7.25）
-          cacheRead: 0.031724      #    缓存命中价（0.23 ÷ 7.25）
-          cacheWrite: 0.110345     #    缓存写入价（0.8 ÷ 7.25）
+        cost:                      # ⑪ 计价（**人民币/百万 tokens**）：直接写厂商人民币价，状态栏原样显示
+          input: 0.8               #    输入价（元/百万 tokens）
+          output: 2.8              #    输出价
+          cacheRead: 0.23          #    缓存命中价
+          cacheWrite: 0.8          #    缓存写入价
         compat:                    # ⑫ 绝大多数情况照抄，不用改
           supportsDeveloperRole: false
           maxTokensField: max_tokens
@@ -204,11 +203,11 @@ providers:
 
 - **思考档位自动派生**：`reasoning: true` 后 omp 按模型 ID 自动识别（如 GLM-5.3+/Kimi K3 得到 `low/high/max`、默认 `max`），**不要**手写 `thinking:` 块，除非默认档位不对。
 - **多模态**：厂商支持图像就把 `input` 写 `[text, image]`，omp 会自动按 `image_url` 内容块发送。
-- **状态栏计价**：价格写在模型 `cost` 块里，**按美元/百万 tokens 计价**（= 人民币价 ÷ `rate`），状态栏显示 `¥ <USD × rate>`。不写 `cost` 则不显示价格或显示免费。
+- **状态栏计价（三态）**：provider 在补丁 `freeProviders` 清单里显示 `coding plan`；模型未写 `cost` 或全 0 显示 `free`；写了 `cost` 则按**人民币**显示 `¥<价>`（`cost` 直接写元/百万 tokens，不再除汇率）。
 - **验证**：`omp models ls` 应能看到新 provider 与模型；若有 `models.yml validation failed` 报错，说明字段名或取值不合法（对照上面模板检查）。
 - **占位符约定**：仓库中 `apiKey` 一律用 `<XXX_API_KEY>` 占位脱敏；**setup 不再交互填 key**——部署时按 provider 保留本地已填的真实 key，未填项在结尾列出并提示手动编辑 `~/.omp/agent/models.yml`。已知 provider（火山/AMD/智谱）可选设环境变量（`OMP_API_KEY`/`AMD_API_KEY`/`ZHIPU_API_KEY`）自动注入；新增 provider 若要环境变量注入，需在 `setup.ps1` 的 `$envVarByProvider` 登记其环境变量名。
 
-> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色与 `cost.json` 定价指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，无需在 `models.yml` 配置——外部配置仅含火山 `volcengine-coding`、AMD `amd` 与智谱 `zhipu`。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。
+> **内置 provider 覆盖**：omp 内置 provider（`deepseek`、`anthropic`、`openai` 等）不写 `baseUrl`/`models` 也能在 `providers:` 下建块，只写 `modelOverrides` 即可覆盖内置模型的任意字段（`cost`/`contextWindow` 等）——`cost` 未覆盖的字段逐项回退内置价。
 
 ### 模型输出速度测试 (`scripts/bench-speed.ts`)
 
@@ -258,40 +257,36 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 
 选型提示：**火山 doubao-seed-2.0-mini / deepseek-v4-flash** 首 token 快且吐字最快，适合 `smol`/`commit`/`task` 等高频轻任务；**AMD 免费通道**首 token 动辄 10–50s，只适合不催人的后台任务（`Free` 角色）。
 
-### 费用 (`cost.json`)
+### 费用与状态栏三态补丁 (`scripts/omp-cny-patch.mjs`)
 
-- **`freeProviders: ["volcengine-coding", "amd"]`** — 火山引擎 coding plan 与 AMD 免费通道为订阅/免费制，状态栏显示 `coding plan`，不计 token 费用、不显示顾问尾巴
-- **DeepSeek 官方 API** — 按量付费，人民币计价（汇率 7.25）。18.x 原生按 provider 定价计算成本；补丁负责 `$`→`¥` 与 `×汇率`：
-  - 定价来源：[DeepSeek 官方定价页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)（价格如有变动，以此页为准）
-  - 覆盖模型：`deepseek-flash`（DeepSeek-V4.1-Flash，新名）、`deepseek-v4-flash`（旧名，已下线仍可调用）、`deepseek-v4-flash-vision-exp`（已下线）、`deepseek-v4-pro`（V4-Pro-0813，计划下线：2026-09-14 12:00 后请求全部路由到 V4.1 Flash 并按其计价）
-  - deepseek-flash / v4-flash / v4-flash-vision（元/百万 tokens）：
-    | 项目 | 空闲时段 | 高峰时段 |
-    |------|---------|---------|
-    | 输入（缓存命中） | 0.02 | 0.04 |
-    | 输入（缓存未命中） | 1 | 2 |
-    | 输出 | 4 | 8 |
-  - V4 Pro（元/百万 tokens）：
-    | 项目 | 空闲时段 | 高峰时段 |
-    |------|---------|---------|
-    | 输入（缓存命中） | 0.15 | 0.30 |
-    | 输入（缓存未命中） | 4.5 | 9.0 |
-    | 输出 | 13.5 | 27.0 |
-  - 时段：高峰 = 北京时间周一至周五 9:00–12:00、14:00–18:00，其余空闲（空闲价为高峰一半）
+状态栏 cost 段显示三种状态（互斥，按序判定）：
 
-  > **定价机制**：omp 18.x（含 18.1.10）状态栏价格来自各模型的 `models.yml` `cost` 块（美元/百万 tokens，人民币价 ÷ 汇率），补丁只做 `×汇率` 与 `¥` 符号。`cost.json` 的 `models`（peak/offpeak）块是旧版（≤18.0.3）遗留，现版补丁已不再读取；DeepSeek 若需精确计价，把上表人民币价 ÷ 7.25 写进 `deepseek` 模型的 `cost` 块（omp 内置 provider 亦可通过 `modelOverrides` 覆盖）。
+1. **`coding plan`** — 模型 provider 在补丁内置清单 `freeProviders = ["volcengine-coding", "amd"]` 中（火山 coding plan 订阅、AMD 免费通道），不计 token 费用、不显示顾问尾巴
+2. **`free`** — 模型未配置 `cost` 或 `cost` 全 0（omp 对"未定价模型"的原生判定口径），多为免费/内置占位模型
+3. **`¥xx`** — 模型配置了非零 `cost`：**按人民币原样显示**，`models.yml` `cost` 块直接写元/百万 tokens，补丁只把 `$` 符号换成 `¥`（不做汇率换算）
+
+计价真源是 omp 会话中已解析的模型对象（`session.state.model.cost`）：外部 provider 来自 `models.yml` 的 `cost` 块；内置 provider（如 `deepseek`）默认用 omp 内置美元目录，需在 `models.yml` 用 `providers.deepseek.modelOverrides` 覆盖为人民币价（本仓库已配置，见 `agent/models.yml`）。
+
+**DeepSeek 官方 API 人民币定价**（`providers.deepseek.modelOverrides`，定价来源：[DeepSeek 官方定价页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)，高峰 = 北京时间周一至周五 9:00–12:00、14:00–18:00，本仓库取高峰价）：
+
+| 模型 | 输入（缓存未命中） | 输入（缓存命中） | 输出 | 缓存写入 |
+|------|------|------|------|------|
+| `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp`（元/百万 tokens） | 2.0 | 0.04 | 8.0 | 2.0 |
+| `deepseek-v4-pro`（元/百万 tokens） | 9.0 | 0.30 | 27.0 | 9.0 |
+
+> 注意：内置 `deepseek-v4-flash` 的 cost 即 omp 内置目录价 ×1（0.14/0.28 美元），被本仓库覆盖为人民币 2.0/8.0 后，omp 内部 `/cost` 等用量报表会把该数值当作美元统计（缩 7.25 倍）——这是 CNY 直写方案的已知取舍；状态栏人民币显示是唯一精确口径。
 
 补丁改写三处代码（仅支持 **omp 18.0.2+ bun 全局包**，18.0.1 原生 exe 布局不再支持）：
 
-`omp.exe` 是 8KB bun shim，bundle 是普通 JS（`dist/cli.js`），可任意改长度。补丁在 bundle 头部注入运行时 helpers（`__cnyCfg`/`__cnyFmt`/`__cnyIsFree`），运行时读取 `~/.omp/agent/cost.json`，并字符串替换三处：
+`omp.exe` 是 8KB bun shim，bundle 是普通 JS（`dist/cli.js`），可任意改长度。补丁在 bundle 头部注入运行时 helpers（`__cnyTier`/`__cnyFmt`），并字符串替换三处：
 
-1. 费用格式化函数（18.0.3 中为 `xEs()`，18.0.11 中为 `AXn()`，18.1.10 中为 `wAn()`）：`$<USD>` → `¥<USD×汇率>`（汇率默认 7.25）
-2. `id:"cost"` 状态段：注入 `freeProviders` 检查——当模型 provider 为订阅制（默认 `volcengine-coding`）时显示 `coding plan` 而非 token 价格，并隐藏顾问尾巴
+1. 费用格式化函数（18.0.3 中为 `xEs()`，18.0.11 中为 `AXn()`，18.1.10 中为 `wAn()`）：`$<USD>` → `¥<原值>`（符号替换，无汇率乘法）
+2. `id:"cost"` 状态段：注入三态判定——provider 属 `freeProviders` 显示 `coding plan`；模型未定价显示 `free`；其余落入 ¥ formatter
 3. `id:"context_pct"` 状态段：去掉 `xx.x%/window` 双数字（窗口总量），只留用量百分比，且取整右对齐为固定 4 列（`  0%`..`100%`）——上下文段宽度恒定不变
 
-`cost.json` 是唯一配置源（运行时读取），缺文件时回退默认值（¥ / 7.25 / `["volcengine-coding"]`）。
+补丁零运行时配置（无 `cost.json`），清单改动（如新增免费 provider）直接改脚本内 `__cnyFreeProviders` 数组。
 
->
-**版本 manifest**：最低支持 `18.0.2`，推荐 `18.1.10`，当前已验证 `18.0.3` + `18.0.11` + `18.1.10`，patch 版本为 `2026.09.05.1`。补丁按「布局表」匹配 bundle：每个已知版本布局有独立锚点组，全部命中才套用（见下）；低于最低版本时自动升级并重新读取 package.json；升级未达到最低版本会安全失败，不会继续留下半 patch。
+**版本 manifest**：最低支持 `18.0.2`，推荐 `18.1.10`，当前已验证 `18.0.3` + `18.0.11` + `18.1.10`，patch 版本为 `2026.09.11.1`。补丁按「布局表」匹配 bundle：每个已知版本布局有独立锚点组，全部命中才套用（见下）；低于最低版本时自动升级并重新读取 package.json；升级未达到最低版本会安全失败，不会继续留下半 patch。
 
 **每次 `--check` 幂等**：已补丁则 no-op；`omp update` 重装后下次运行自动重打。首次补丁自动备份 `<target>.orig` 供 `--restore` 回滚。
 
@@ -304,7 +299,7 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 - 定位 bundle：`~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`
 - 首次补丁备份 `<target>.orig`；替换用「暂存 `.cny` → 重命名换入」避免 Windows 对运行中文件的写入锁（EBUSY）
 - 顾问段：仅计费（非 coding plan）提供商显示 `+ ¥x (adv)`；coding plan 提供商只显示 `coding plan`
-- **峰谷定价已不再注入**：按 provider 定价计算 `usageStats.cost`，补丁只做 `×汇率` 与 ¥ 符号
+- **汇率乘法已移除**：omp 按 provider 定价计算 `usageStats.cost`，补丁只做符号替换（`$` → `¥`），价格数值原样保留
 - 升级后 `.orig` 自动刷新（避免 `--restore` 降级到旧版本 bundle）
 - 回滚：`bun ~/.omp/omp-cny-patch.mjs --restore`（还原 `.orig`、移除 wrapper、还原 shim）
 
@@ -353,7 +348,7 @@ cd ~/omp-config && git pull
 | 文件 | 处理 |
 |------|------|
 | `config.yml` | 复制后**剥离 `shellPath` / `setupVersion`**（机器本地状态，按设计不入仓） |
-| `cost.json` / `settings.json` | 直接覆盖入库 |
+| `settings.json` | 直接覆盖入库 |
 | `models.yml` | **不覆盖**模型定义（仓库为源）；只做密钥防线检查——仓库中出现非 `<...>` 占位符的真实 apiKey 立即中止提交，live 中已填的真实 key 一律不入仓 |
 | `lsp.json` / `skills/` | 跳过（部署方向才探测覆盖） |
 
