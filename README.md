@@ -126,7 +126,7 @@ statusLine:
 | `vision` | doubao-seed-evolving | `auto` | 视觉/截图理解（方舟多模态） |
 | `Free` | amd/Qwen3.8-Flash-Next | `high` | AMD 免费通道（免费提供商，不计费） |
 | `Zhipu` | zhipu/glm-5.3-flash | `high` | 智谱 GLM（自有余额付费，备用） |
-| `DeepSeek` | deepseek-v4-flash | `high` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用，不在 `cycleOrder` 中） |
+| `DeepSeek` | deepseek-v4-flash | `high` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用，不在 `cycleOrder` 中。旧模型名仍可调用，由 V4.1-Flash 服务并按 Flash 计价） |
 
 **思考档位循环 (`cycleOrder`)**: `smol` → `default` → `slow` → `Free`，逐级升档。
 
@@ -263,19 +263,20 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 - **`freeProviders: ["volcengine-coding", "amd"]`** — 火山引擎 coding plan 与 AMD 免费通道为订阅/免费制，状态栏显示 `coding plan`，不计 token 费用、不显示顾问尾巴
 - **DeepSeek 官方 API** — 按量付费，人民币计价（汇率 7.25）。18.x 原生按 provider 定价计算成本；补丁负责 `$`→`¥` 与 `×汇率`：
   - 定价来源：[DeepSeek 官方定价页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)（价格如有变动，以此页为准）
-  - 覆盖模型：`deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4-pro`
-  - V4 Flash / V4 Flash Vision（元/百万 tokens）：
+  - 覆盖模型：`deepseek-flash`（DeepSeek-V4.1-Flash，新名）、`deepseek-v4-flash`（旧名，已下线仍可调用）、`deepseek-v4-flash-vision-exp`（已下线）、`deepseek-v4-pro`（V4-Pro-0813，计划下线：2026-09-14 12:00 后请求全部路由到 V4.1 Flash 并按其计价）
+  - deepseek-flash / v4-flash / v4-flash-vision（元/百万 tokens）：
     | 项目 | 空闲时段 | 高峰时段 |
     |------|---------|---------|
-    | 输入（缓存命中） | 0.05 | 0.10 |
-    | 输入（缓存未命中） | 1.5 | 3.0 |
-    | 输出 | 4.5 | 9.0 |
+    | 输入（缓存命中） | 0.02 | 0.04 |
+    | 输入（缓存未命中） | 1 | 2 |
+    | 输出 | 4 | 8 |
   - V4 Pro（元/百万 tokens）：
     | 项目 | 空闲时段 | 高峰时段 |
     |------|---------|---------|
     | 输入（缓存命中） | 0.15 | 0.30 |
     | 输入（缓存未命中） | 4.5 | 9.0 |
     | 输出 | 13.5 | 27.0 |
+  - 时段：高峰 = 北京时间周一至周五 9:00–12:00、14:00–18:00，其余空闲（空闲价为高峰一半）
 
   > **定价机制**：omp 18.x（含 18.1.10）状态栏价格来自各模型的 `models.yml` `cost` 块（美元/百万 tokens，人民币价 ÷ 汇率），补丁只做 `×汇率` 与 `¥` 符号。`cost.json` 的 `models`（peak/offpeak）块是旧版（≤18.0.3）遗留，现版补丁已不再读取；DeepSeek 若需精确计价，把上表人民币价 ÷ 7.25 写进 `deepseek` 模型的 `cost` 块（omp 内置 provider 亦可通过 `modelOverrides` 覆盖）。
 
