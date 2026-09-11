@@ -6,15 +6,14 @@ modelRoles:
   slow: volcengine-coding/glm-5.3:max
   advisor: volcengine-coding/doubao-seed-evolving:medium
   commit: volcengine-coding/doubao-seed-2.0-mini:off
-  smol: volcengine-coding/deepseek-v4-flash-ga-260731:auto
+  smol: deepseek/deepseek-flash:auto
   default: volcengine-coding/glm-5-3-flash
   tiny: volcengine-coding/doubao-seed-2.0-mini:off
-  vision: volcengine-coding/doubao-seed-evolving:auto
-  DeepSeek: deepseek/deepseek-v4-flash:high
+  vision: volcengine-coding/glm-5-3-flash:auto
+  DeepSeek: deepseek/deepseek-flash:auto
   designer: volcengine-coding/doubao-seed-evolving:medium
   task: volcengine-coding/glm-5-3-flash:auto
   Free: amd/Qwen3.8-Flash-Next:high
-  Zhipu: zhipu/glm-5.3-flash:high
 defaultThinkingLevel: auto
 memory:
   backend: mnemopi
@@ -37,3 +36,5 @@ statusLine:
       showUntracked: false
 composer:
   shape: band
+dev:
+  autoqaConsent: granted
