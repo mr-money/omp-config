@@ -10,6 +10,8 @@
 | 仓库层 | 本仓库克隆 | 同步中转，模型定义（`models.yml`）与技能以此为源 |
 | 真源层 | GitHub `origin/master` | 跨机器共同真源，所有机器从这里 pull |
 
+配置同步全流程可视化：[docs/omp-config-sync.html](docs/omp-config-sync.html)（archify 生成，源文件 `docs/omp-config-sync.workflow.json`）
+
 ```mermaid
 flowchart LR
     GH["GitHub（真源）"] -- "git pull" --> Repo["仓库克隆"]

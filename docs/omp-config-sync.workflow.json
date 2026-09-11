@@ -1,0 +1,77 @@
+{
+  "schema_version": 2,
+  "diagram_type": "workflow",
+  "meta": {
+    "title": "omp-config 配置同步工作流",
+    "locale": "zh-CN",
+    "quality_profile": "showcase",
+    "output": "omp-config-sync.html"
+  },
+  "lanes": [
+    { "id": "github", "label": "GitHub 真源", "variant": "normal" },
+    { "id": "repo", "label": "仓库克隆" },
+    { "id": "live", "label": "~/.omp 运行层" },
+    { "id": "machine", "label": "机器本地项", "variant": "exception" }
+  ],
+  "phases": [
+    { "id": "pull", "label": "拉取", "fromCol": 0, "toCol": 1 },
+    { "id": "deploy", "label": "部署", "fromCol": 2, "toCol": 3, "variant": "emphasis" },
+    { "id": "promote", "label": "提升", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "groups": [
+    { "id": "pull_cycle", "label": "部署方向：仓库 → Live", "lane": "repo", "fromCol": 0, "toCol": 3, "variant": "emphasis" },
+    { "id": "promote_cycle", "label": "推方向：Live → 仓库", "lane": "live", "fromCol": 4, "toCol": 5, "variant": "dashed" }
+  ],
+  "mainPath": ["github", "git_pull", "repo", "setup", "live", "sync", "git_push"],
+  "nodes": [
+    { "id": "github", "lane": "github", "col": 0, "type": "cloud", "label": "GitHub origin/master", "sublabel": "跨机器共同真源", "width": 150 },
+    { "id": "git_pull", "lane": "github", "col": 1, "type": "messagebus", "label": "git pull", "sublabel": "收其他机器改动", "width": 130 },
+    { "id": "git_push", "lane": "github", "col": 5, "type": "messagebus", "label": "git push", "sublabel": "回写真源", "width": 130 },
+    { "id": "repo", "lane": "repo", "col": 2, "type": "database", "label": "仓库克隆", "sublabel": "models.yml / skills 源", "width": 150 },
+    { "id": "setup", "lane": "repo", "col": 3, "type": "backend", "label": "setup.ps1", "sublabel": "覆盖式部署", "tag": "幂等", "width": 150 },
+    { "id": "live", "lane": "live", "col": 4, "type": "frontend", "label": "~/.omp", "sublabel": "omp 实际读取", "width": 150 },
+    { "id": "sync", "lane": "live", "col": 5, "type": "backend", "label": "sync-from-live.ps1", "sublabel": "提升改动并 push", "tag": "剥机器本地项", "width": 150 },
+    { "id": "shellpath", "lane": "machine", "col": 3, "type": "external", "label": "shellPath / setupVersion", "sublabel": "探测回写，不入仓", "width": 160 },
+    { "id": "keys", "lane": "machine", "col": 5, "type": "security", "label": "真实 apiKey", "sublabel": "永不入仓", "tag": "防线检查", "width": 150 }
+  ],
+  "edges": [
+    { "id": "pull-edge", "from": "github", "to": "git_pull", "variant": "default" },
+    { "id": "pull-repo", "from": "git_pull", "to": "repo", "variant": "default" },
+    { "id": "repo-setup", "from": "repo", "to": "setup", "label": "覆盖式部署", "variant": "emphasis" },
+    { "id": "setup-live", "from": "setup", "to": "live", "variant": "emphasis" },
+    { "id": "setup-probe", "from": "setup", "to": "shellpath", "label": "探测回写", "variant": "dashed" },
+    { "id": "live-sync", "from": "live", "to": "sync", "label": "配置改动", "variant": "emphasis" },
+    { "id": "sync-push", "from": "sync", "to": "git_push", "variant": "emphasis" },
+    { "id": "push-github", "from": "git_push", "to": "github", "label": "回写真源", "variant": "emphasis", "role": "return", "route": "up-channel", "fromSide": "top", "toSide": "top" },
+    { "id": "sync-keys", "from": "sync", "to": "keys", "label": "密钥不入仓", "variant": "security", "role": "error" }
+  ],
+  "cards": [
+    {
+      "dot": "emerald",
+      "title": "部署方向（拉）",
+      "items": [
+        "git pull → setup.ps1，覆盖式部署最新配置",
+        "按 provider 保留本地已填真实 key",
+        "探测回写 shellPath，机器本地项不覆盖"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "推方向（提升）",
+      "items": [
+        "sync-from-live.ps1 把 live 改动提升回仓库并 push",
+        "shellPath / setupVersion 自动剥离，永不入仓",
+        "真实 apiKey 一律不入仓，防线检查强制拦截"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "多机收敛",
+      "items": [
+        "先 git pull --rebase 收别人的改动",
+        "再 sync-from-live.ps1 推自己的改动",
+        "冲突只出现在仓库层，手工解一次即可"
+      ]
+    }
+  ]
+}
