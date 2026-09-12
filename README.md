@@ -119,7 +119,7 @@ statusLine:
 | `default` | glm-5-3-flash | — | 默认主模型，日常编码 |
 | `plan` | GLM-5.3 | `high` | 任务规划阶段 |
 | `slow` | GLM-5.3 | `max` | 深度推理 / 复杂问题 |
-| `smol` | deepseek-v4-flash-ga-260731 | `auto` | 轻量快速任务（方舟 DeepSeek V4 Flash，TTFT/吐字速度最优） |
+| `smol` | deepseek/deepseek-flash | `auto` | 轻量快速任务（官方 DeepSeek API，DeepSeek-V4.1-Flash，按量计费） |
 | `advisor` | doubao-seed-evolving | `medium` | 顾问模式 |
 | `designer` | doubao-seed-evolving | `medium` | UI/UX 设计任务 |
 | `task` | glm-5-3-flash | `auto` | 任务子代理（委派多步任务） |
@@ -127,7 +127,7 @@ statusLine:
 | `vision` | doubao-seed-evolving | `auto` | 视觉/截图理解（方舟多模态） |
 | `Free` | amd/Qwen3.8-Flash-Next | `high` | AMD 免费通道（免费提供商，不计费） |
 | `Zhipu` | zhipu/glm-5.3-flash | `high` | 智谱 GLM（自有余额付费，备用） |
-| `DeepSeek` | deepseek-v4-flash | `high` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用，不在 `cycleOrder` 中。旧模型名仍可调用，由 V4.1-Flash 服务并按 Flash 计价） |
+| `DeepSeek` | deepseek/deepseek-flash | `auto` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用，不在 `cycleOrder` 中。旧模型名 `deepseek-v4-flash` 等仍可调用，由 V4.1-Flash 服务并按 Flash 计价） |
 
 **思考档位循环 (`cycleOrder`)**: `smol` → `default` → `slow` → `Free`，逐级升档。
 
@@ -155,7 +155,7 @@ mnemopi:
 内置火山引擎大模型 API（方舟，coding plan 订阅制）：
 - **glm-5-3-flash** — 默认模型（1M 上下文）
 - **glm-5.3** — 规划 / 慢速深度推理（1M 上下文）
-- **deepseek-v4-flash-ga-260731** — `smol` 角色主力（1M 上下文；TTFT ~440ms、~86 tok/s，全表最快）
+- **deepseek-v4-flash-ga-260731** — 方舟 DeepSeek V4 Flash（1M 上下文；TTFT ~440ms、~86 tok/s，全表最快；`smol` 角色已改走官方 `deepseek/deepseek-flash`，此模型保留作方舟通道备选）
 - **doubao-seed-2.0-mini** — 轻量 / commit / mnemopi 记忆抽取（`tiny`/`commit` 角色）
 - **doubao-seed-evolving** — 顾问 / 设计 / 视觉（`advisor`、`designer`、`vision` 角色）（1M 上下文，多模态）
 
@@ -171,7 +171,7 @@ AMD 免费通道（`amd` provider，AMD Radeon 开发者平台，OpenAI 兼容�
 - `baseUrl: https://open.bigmodel.cn/api/paas/v4`，请求自动落到 `/chat/completions`；`open.bigmodel.cn` 主机会被自动识别为智谱，走 `zai` thinking 方言（`thinking.type: enabled` + `reasoning_effort`，工具调用时自动开启 `tool_stream`）
 - 价格（元/百万 tokens）：输入 **0.8**、输出 **2.8**、缓存命中 **0.23**、缓存写入 **0.8**。`models.yml` `cost` 块**直接写人民币价**，状态栏原样显示 `¥` 价格。
 
-> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，`models.yml` 中仅需一个 `deepseek:` 块写 `modelOverrides` 覆盖内置美元价为本项目的人民币价（见 `agent/models.yml`）。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。
+> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `smol` 与 `DeepSeek` 角色指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，`models.yml` 中仅需一个 `deepseek:` 块写 `modelOverrides` 覆盖内置美元价为本项目的人民币价（见 `agent/models.yml`）。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。`deepseek-flash` 由官方 `/v1/models` 动态发现，价格靠 `modelOverrides` 固定，官方降价时改 `models.yml` 即可。
 
 ### 新增模型提供商节点（`models.yml`）
 
@@ -267,14 +267,16 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 2. **`free`** — 模型未配置 `cost` 或 `cost` 全 0（omp 对"未定价模型"的原生判定口径），多为免费/内置占位模型
 3. **`¥xx`** — 模型配置了非零 `cost`：**按人民币原样显示**，`models.yml` `cost` 块直接写元/百万 tokens，补丁只把 `$` 符号换成 `¥`（不做汇率换算）
 
-计价真源是 omp 会话中已解析的模型对象（`session.state.model.cost`）：外部 provider 来自 `models.yml` 的 `cost` 块；内置 provider（如 `deepseek`）默认用 omp 内置美元目录，需在 `models.yml` 用 `providers.deepseek.modelOverrides` 覆盖为人民币价（本仓库已配置，见 `agent/models.yml`）。
+计价真源是 omp 会话中已解析的模型对象（`session.state.model.cost`）：外部 provider 来自 `models.yml` 的 `cost` 块；内置 provider（如 `deepseek`）默认用 omp 内置美元目录，需在 `models.yml` 用 `providers.deepseek.modelOverrides` 覆盖为人民币价（本仓库已配置，见 `agent/models.yml`）。**动态发现模型**（如 `deepseek-flash`，经官方 `/v1/models` 拉取）不带价格，同样靠 `modelOverrides` 补价——`overrides` 按 `provider+id` 匹配，对动态模型同样生效。
 
 **DeepSeek 官方 API 人民币定价**（`providers.deepseek.modelOverrides`，定价来源：[DeepSeek 官方定价页](https://api-docs.deepseek.com/zh-cn/quick_start/pricing/)，高峰 = 北京时间周一至周五 9:00–12:00、14:00–18:00，本仓库取高峰价）：
 
 | 模型 | 输入（缓存未命中） | 输入（缓存命中） | 输出 | 缓存写入 |
 |------|------|------|------|------|
-| `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp`（元/百万 tokens） | 2.0 | 0.04 | 8.0 | 2.0 |
+| `deepseek-flash`（DeepSeek-V4.1-Flash，现役）/ `deepseek-v4-flash` / `deepseek-v4-flash-vision-exp`（旧名，仍由 V4.1-Flash 服务，元/百万 tokens） | 2.0 | 0.04 | 8.0 | 2.0 |
 | `deepseek-v4-pro`（元/百万 tokens） | 9.0 | 0.30 | 27.0 | 9.0 |
+
+> `deepseek-flash` 是动态发现模型（官方 `/v1/models` 拉取，静态目录与 bundle 均无此 id），`/v1/models` 只返回 id 不带价格——动态模型 cost 为空，必须用 `modelOverrides` 补人民币价，否则状态栏误判 `free`。
 
 > 注意：内置 `deepseek-v4-flash` 的 cost 即 omp 内置目录价 ×1（0.14/0.28 美元），被本仓库覆盖为人民币 2.0/8.0 后，omp 内部 `/cost` 等用量报表会把该数值当作美元统计（缩 7.25 倍）——这是 CNY 直写方案的已知取舍；状态栏人民币显示是唯一精确口径。
 

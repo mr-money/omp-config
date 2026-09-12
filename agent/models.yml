@@ -80,6 +80,12 @@ providers:
           maxTokensField: max_tokens
   deepseek:
     modelOverrides:
+      deepseek-flash:
+        cost:
+          input: 2.0
+          output: 8.0
+          cacheRead: 0.04
+          cacheWrite: 2.0
       deepseek-v4-flash:
         cost:
           input: 2.0
