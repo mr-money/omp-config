@@ -10,6 +10,4 @@ $ver = $null; try {$ver=(Get-Content (Join-Path $pkg "package.json") -Raw|Conver
 Check "OMP" (($ver -as [version]) -ge [version]"18.0.2") $(if($ver){$ver}else{"bundle/package missing"})
 Check "bundle" (Test-Path $bundle) $bundle
 foreach($f in @("config.yml","models.yml","lsp.json")){ $p=Join-Path $ompHome "agent\$f"; Check $f (Test-Path $p) $p }
-$src=if(Test-Path $bundle){Get-Content $bundle -Raw}else{""}; Check "CNY patch" ($src -match '__CNY_PATCH_VERSION__="2026\.09\.11\.1"' -and $src -match '__cnyTier') "patch 2026.09.11.1 marker"
-$wrapper=Join-Path $bunInstall "bin\omp.cmd"; Check "wrapper" (Test-Path $wrapper) $wrapper
 foreach($tool in @("gopls","python")){ $c=Get-Command $tool; Check $tool ($null -ne $c) $(if($c){$c.Source}else{"not found"}) }

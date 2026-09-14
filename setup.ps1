@@ -1,11 +1,11 @@
-﻿# 行为：升级 OMP 到补丁推荐版本 -> 复制配置 -> (可选)环境变量填 key -> 提示手动编辑 -> 跑 patch --setup
+﻿# 行为：安装推荐版本 OMP -> 复制配置 -> (可选)环境变量填 key -> 提示手动编辑
 
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $OmpHome = Join-Path $env:USERPROFILE ".omp"
 $AgentDir = Join-Path $OmpHome "agent"
-$PatchScript = Join-Path $OmpHome "omp-cny-patch.mjs"
+
 $bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $env:USERPROFILE ".bun" }
 $OmpPkgDir = Join-Path $bunInstall "install\global\node_modules\@oh-my-pi\pi-coding-agent"
 $OmpPkgBundle = Join-Path $OmpPkgDir "dist\cli.js"
@@ -32,9 +32,7 @@ if (-not $bun) {
 }
 Write-OK "bun $(& bun --version) @ $($bun.Source)"
 
-# 检查并确保 bun 全局 bundle；旧 native exe 不再作为 patch 目标。
-# 始终升级到 $RecommendedOmpVersion（幂等：已是该版本则跳过），保证补丁锚点
-# 与 bundle 布局同步——补丁脚本只匹配其 LAYOUTS 覆盖的版本。
+# 检查并确保 bun 全局 bundle；非推荐版本即重装（幂等：已是该版本则跳过）。
 $needInstall = $true
 if (Test-Path (Join-Path $OmpPkgDir "package.json")) {
     try { $installed = (Get-Content (Join-Path $OmpPkgDir "package.json") -Raw | ConvertFrom-Json).version; $needInstall = ($installed -ne $RecommendedOmpVersion) } catch { $needInstall = $true }
@@ -48,7 +46,7 @@ if ($needInstall) {
 if (-not (Test-Path $OmpPkgBundle)) { Write-Fail "升级后仍未找到 bundle: $OmpPkgBundle"; exit 1 }
 $actual = (Get-Content (Join-Path $OmpPkgDir "package.json") -Raw | ConvertFrom-Json).version
 if ([version]$actual -lt [version]"18.0.2") { Write-Fail "OMP 版本校验失败: $actual"; exit 1 }
-if ($actual -ne $RecommendedOmpVersion) { Write-Warn "omp 版本 $actual 与补丁推荐版本 $RecommendedOmpVersion 不一致，补丁可能因布局漂移失败" }
+if ($actual -ne $RecommendedOmpVersion) { Write-Warn "omp 版本 $actual 与推荐版本 $RecommendedOmpVersion 不一致" }
 Write-OK "omp bundle $actual"
 
 # 2. 确保目录存在
@@ -119,9 +117,6 @@ if ($existingKeys.Count -gt 0) {
     Write-Utf8Text $dstModels $yml
     Write-OK "已回填各 provider apiKey 到最新 models.yml"
 }
-# 部署 patch 脚本到 ~/.omp（--check/--setup 的运行副本，随仓库更新）
-Copy-Item -Force (Join-Path $RepoRoot "scripts\omp-cny-patch.mjs") -Destination $PatchScript
-Write-OK "scripts/omp-cny-patch.mjs -> ~/.omp/omp-cny-patch.mjs"
 
 Write-Step "复制 skills"
 $skillsSrc = Join-Path $RepoRoot "skills"
@@ -225,27 +220,15 @@ if (Test-Path $modelsYml) {
     Write-Utf8Text $modelsYml $yml
 }
 
-# 7. 跑 patch --setup
-Write-Step "执行 omp 人民币化 patch --setup"
-& bun $PatchScript --setup
-if ($LASTEXITCODE -ne 0) {
-    Write-Fail "patch --setup 失败，退出码 $LASTEXITCODE"
-    exit 1
-}
-Write-OK "patch --setup 完成"
-
-# 8. 摘要
 Write-Step "部署完成"
 Write-Host ""
 Write-Host "  omp 配置目录: $AgentDir"
-Write-Host "  patch 脚本:   $PatchScript"
 Write-Host "  omp 安装: $OmpPkgBundle (bundle)"
 Write-Host ""
 Write-Host "  启动: omp"
-Write-Host "  回滚: bun $PatchScript --restore"
 Write-Host ""
 
-# 8.1 占位符盘点：提示哪些 provider 的 apiKey 还需手动填写
+# 占位符盘点：提示哪些 provider 的 apiKey 还需手动填写
 $unfilled = @()
 if (Test-Path $modelsYml) {
     $finalYml = [System.IO.File]::ReadAllText($modelsYml)
