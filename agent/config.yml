@@ -28,11 +28,13 @@ cycleOrder:
   - slow
   - Free
 statusLine:
-  preset: default
+  preset: custom
+  leftSegments: [pi, vim, model, mode, collab, path, git, pr, context_pct]
+  rightSegments: [session_name]
   separator: powerline-thin
   segmentOptions:
     git:
-      showBranch: false
+      showBranch: true
       showStaged: false
       showUnstaged: false
       showUntracked: false
