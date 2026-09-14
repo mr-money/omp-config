@@ -29,7 +29,7 @@ cycleOrder:
   - Free
 statusLine:
   preset: default
-  separator: pipe
+  separator: powerline-thin
   segmentOptions:
     git:
       showBranch: false
