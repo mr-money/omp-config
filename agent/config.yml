@@ -28,12 +28,20 @@ cycleOrder:
   - slow
   - Free
 statusLine:
+  preset: default
+  separator: pipe
   segmentOptions:
     git:
       showBranch: false
       showStaged: false
       showUnstaged: false
       showUntracked: false
+    path:
+      abbreviate: true
+      maxLength: 40
+      stripWorkPrefix: true
+    model:
+      showThinkingLevel: true
 composer:
   shape: band
 dev:
