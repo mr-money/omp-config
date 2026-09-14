@@ -46,7 +46,7 @@ omp-config/
 
 > **PowerShell**：`setup.ps1` 同时支持 Windows PowerShell 5.1 与 PowerShell 7+（脚本已带 UTF-8 BOM，中文注释/输出在两种环境下均解析正常；终端若显示中文乱码仅影响显示，不影响执行）。
 
-- `setup.ps1` 会自动安装/升级 bun 全局包到推荐的 **OMP 18.1.10**；patch 最低支持 18.0.2，已验证 18.0.3、18.0.11 与 18.1.10（三布局锚点）。18.0.1 原生 exe 布局不再作为 patch 目标。支持自定义 `BUN_INSTALL`（三脚本 `setup.ps1` / `omp-cny-patch.mjs` / `doctor.ps1` 同一约定）。
+- `setup.ps1` 会自动安装/升级 bun 全局包到推荐的 **OMP 18.1.20**（版本不同即重装，保证 bundle 布局与补丁锚点同步）；patch 最低支持 18.0.2，已验证 18.0.3、18.0.11、18.1.10 与 18.1.20（四布局锚点）。18.0.1 原生 exe 布局不再作为 patch 目标。支持自定义 `BUN_INSTALL`（三脚本 `setup.ps1` / `omp-cny-patch.mjs` / `doctor.ps1` 同一约定）。
 - 已安装 `bun`（patch 脚本用 bun 运行）
 - 已安装语言服务器（gopls、pylsp 等）
 
@@ -64,7 +64,7 @@ cd omp-config
 
 脚本流程（自动执行，无需手动抄步骤）：
 1. 校验 bun / omp 已安装
-2. 复制 `agent/` → `~/.omp/agent/`、`skills/` → `~/.omp/agent/skills/`、`scripts/omp-cny-patch.mjs` → `~/.omp/`
+2. 升级 omp 到补丁推荐版本（`$RecommendedOmpVersion`，非匹配即重装）、复制 `agent/` → `~/.omp/agent/`、`skills/` → `~/.omp/agent/skills/`、`scripts/omp-cny-patch.mjs` → `~/.omp/`
 3. 探测本机 pwsh / gopls / python 路径，写回对应配置
 4. 注入 API Key：**不再交互输入**——仅从环境变量（`OMP_API_KEY`/`AMD_API_KEY`/`ZHIPU_API_KEY`）读取，设了就写入对应 provider；未设置则保留 `<...>` 占位符。重部署时**按 provider 保留本地已填的真实 key**（通用扫描全部 provider，非硬编码），结尾列出仍为占位符的 provider 与文件路径，提示手动编辑
 5. 执行 `bun ~/.omp/omp-cny-patch.mjs --setup` 激活状态栏计价补丁（布局 B 下同时安装自愈 wrapper）
@@ -284,20 +284,20 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 
 `omp.exe` 是 8KB bun shim，bundle 是普通 JS（`dist/cli.js`），可任意改长度。补丁在 bundle 头部注入运行时 helpers（`__cnyTier`/`__cnyFmt`），并字符串替换三处：
 
-1. 费用格式化函数（18.0.3 中为 `xEs()`，18.0.11 中为 `AXn()`，18.1.10 中为 `wAn()`）：`$<USD>` → `¥<原值>`（符号替换，无汇率乘法）
+1. 费用格式化函数（18.0.3 中为 `xEs()`，18.0.11 中为 `AXn()`，18.1.10 中为 `wAn()`，18.1.20 中为 `ano()`）：`$<USD>` → `¥<原值>`（符号替换，无汇率乘法）
 2. `id:"cost"` 状态段：注入三态判定——provider 属 `freeProviders` 显示 `coding plan`；模型未定价显示 `free`；其余落入 ¥ formatter
 3. `id:"context_pct"` 状态段：去掉 `xx.x%/window` 双数字（窗口总量），只留用量百分比，且取整右对齐为固定 4 列（`  0%`..`100%`）——上下文段宽度恒定不变
 
 补丁零运行时配置（无 `cost.json`），清单改动（如新增免费 provider）直接改脚本内 `__cnyFreeProviders` 数组。
 
-**版本 manifest**：最低支持 `18.0.2`，推荐 `18.1.10`，当前已验证 `18.0.3` + `18.0.11` + `18.1.10`，patch 版本为 `2026.09.11.1`。补丁按「布局表」匹配 bundle：每个已知版本布局有独立锚点组，全部命中才套用（见下）；低于最低版本时自动升级并重新读取 package.json；升级未达到最低版本会安全失败，不会继续留下半 patch。
+**版本 manifest**：最低支持 `18.0.2`，推荐 `18.1.20`，当前已验证 `18.0.3` + `18.0.11` + `18.1.10` + `18.1.20`，patch 版本为 `2026.09.14.1`。补丁按「布局表」匹配 bundle：每个已知版本布局有独立锚点组，全部命中才套用（见下）；低于最低版本时自动升级并重新读取 package.json；升级未达到最低版本会安全失败，不会继续留下半 patch。
 
 **每次 `--check` 幂等**：已补丁则 no-op；`omp update` 重装后下次运行自动重打。首次补丁自动备份 `<target>.orig` 供 `--restore` 回滚。
 
 **自愈 wrapper（`--setup`）**：`omp update` 每次都会重写 `dist/cli.js`（补丁丢失）并重建 `omp.exe` shim（会遮蔽 wrapper）。`--setup` 会把 bun 的 `omp.exe` shim 改名成 `omp.exe.bak`，安装 `~/.bun/bin/omp.cmd` 包装器——每次 `omp` 启动先跑 `--check`（自动重打补丁）再启动 bundle；`omp update` 命令结束时自动再跑一次 `--setup` 夺回 shim 并重打补丁，全程无需手动干预。回滚 `--restore` 会移除 wrapper 并还原 shim。
 
 **兼容性（已验证）**：
-- omp `18.0.3`、`18.0.11` 与 `18.1.10`（bun 全局包，plain-JS bundle）。18.0.11 重构了 status line 代码（`xEs`→`AXn`、`C_i`→`tKr`、`Ae`→`Ee`、`XE`→`iA`、`zl`→`Wl`，`isAdvisorUsingSubscription` 移入 advisor 分支）；18.1.10 再次漂移（`AXn`→`wAn`、`tKr`→`aDi`、`Ee`→`pi∘Ae`、`iA`→`_E`、`Wl`→`ml`、`S`→`k`，cost/context 段新增 `startupPlaceholder` 占位分支），布局表据此区分三代锚点；未来版本再漂移时会响亮报错而不是半 patch。
+- omp `18.0.3`、`18.0.11`、`18.1.10` 与 `18.1.20`（bun 全局包，plain-JS bundle）。18.0.11 重构了 status line 代码（`xEs`→`AXn`、`C_i`→`tKr`、`Ae`→`Ee`、`XE`→`iA`、`zl`→`Wl`，`isAdvisorUsingSubscription` 移入 advisor 分支）；18.1.10 再次漂移（`AXn`→`wAn`、`tKr`→`aDi`、`Ee`→`pi∘Ae`、`iA`→`_E`、`Wl`→`ml`、`S`→`k`，cost/context 段新增 `startupPlaceholder` 占位分支）；18.1.20 第三次漂移（`wAn`→`ano`、`xAn`→`lno`、`aDi`→`ria`、`lDi`→`iia`、`iA`→`CM`、`ml`→`Wl`、`Ee`→`ve`、`S`→`b`，cost 段新增峰谷价箭头 ↑/↓ 与 `isUsingOAuth` 订阅判定），布局表据此区分四代锚点；未来版本再漂移时会响亮报错而不是半 patch。
 
 工作原理：
 - 定位 bundle：`~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js`
@@ -309,7 +309,7 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 
 ### 安装布局与单入口（当前状态）
 
-当前机器使用 **omp 18.1.10 bun 全局包**，只有单一入口：
+当前机器使用 **omp 18.1.20 bun 全局包**，只有单一入口：
 
 - `~/.bun/bin/omp.cmd` — 启动包装器：先跑 `bun ~/.omp/omp-cny-patch.mjs --check` 自愈补丁，再启动 bundle；`omp update` 结束后自动重跑 `--setup` 夺回 shim。bundle 路径在生成 wrapper 时按 `BUN_INSTALL` 解析（`bun install -g` 换目录后重跑 `--setup` 即可）
 - `~/.bun/install/global/node_modules/@oh-my-pi/pi-coding-agent/dist/cli.js` — 真实 bundle（已打补丁）

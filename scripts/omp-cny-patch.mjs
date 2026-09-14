@@ -17,7 +17,8 @@
  *
  * The sites rewritten:
  *
- *   1. Cost formatter (`xEs` ≤18.0.3, `AXn` 18.0.11, `wAn` 18.1.10+): only
+ *   1. Cost formatter (`xEs` ≤18.0.3, `AXn` 18.0.11, `wAn` 18.1.10, `ano`
+ *      18.1.20+): only
  *      re-symbols the price — `$` → `¥` (and `$x.xxxx`-style precision
  *      kept). NO rate multiplication: models.yml `cost` blocks now carry
  *      CNY prices directly (￥/百万 tokens), including for built-in
@@ -41,7 +42,7 @@
  * No `cost.json` — the script ships zero runtime config; defaults are
  * `freeProviders = ["volcengine-coding"]` (see DEFAULT_FREE below).
  *
- * Patch manifest: minimum 18.0.2, recommended 18.1.10; verified 18.0.3 + 18.0.11 + 18.1.10.
+ * Patch manifest: minimum 18.0.2, recommended 18.1.20; verified 18.0.3 + 18.0.11 + 18.1.10 + 18.1.20.
  * Version gate: omp below 18.0.2 is not supported (the 18.0.1 embedded-exe
  * layout is NOT patched). If the installed bun package is older, the script
  * first runs `bun dist/cli.js update` (the bundle's own non-interactive
@@ -52,7 +53,7 @@
  * patching continues; the anchor checks decide whether the current bundle
  * still patches.
  *
- * Verified against: omp 18.0.3, 18.0.11 and 18.1.10 (bun global package, plain-JS bundle)
+ * Verified against: omp 18.0.3, 18.0.11, 18.1.10 and 18.1.20 (bun global package, plain-JS bundle)
  */
 import { existsSync, readFileSync, writeFileSync, copyFileSync, rmSync, renameSync, mkdirSync, appendFileSync, statSync } from "node:fs";
 import { homedir } from "node:os";
@@ -71,6 +72,13 @@ const BUNDLE = join(PKG_DIR, "dist", "cli.js");
 const BUNDLE_PKG = join(PKG_DIR, "package.json");
 const BIN_DIR = join(BUN_ROOT, "bin");
 
+// Wrapper paths: `omp` resolves to omp.cmd (generated below); the bun omp.exe
+// shim is renamed aside so the wrapper wins PATHEXT. `SHIM_BAK` holds it for
+// `--restore` / teardown.
+const OMP_EXE = join(BIN_DIR, "omp.exe");
+const SHIM_BAK = join(BIN_DIR, "omp.exe.shimbak");
+const WRAPPER = join(BIN_DIR, "omp.cmd");
+
 // Status-line tier defaults: providers listed here are subscription-based
 // ("coding plan"); everything else shows `free` (no/zero pricing) or the
 // ¥ price from the resolved model cost.
@@ -79,9 +87,9 @@ const DEFAULT_FREE = ["volcengine-coding"];
 // Layout B floor: omp below this is not supported and gets upgraded first.
 const PATCH_MANIFEST = Object.freeze({
 	minimumVersion: "18.0.2",
-	recommendedVersion: "18.1.10",
-	verifiedVersions: ["18.0.3", "18.0.11", "18.1.10"],
-	patchVersion: "2026.09.11.1",
+	recommendedVersion: "18.1.20",
+	verifiedVersions: ["18.0.3", "18.0.11", "18.1.10", "18.1.20"],
+	patchVersion: "2026.09.14.1",
 });
 const MIN_BUNDLE_VER = parseVersion(PATCH_MANIFEST.minimumVersion);
 
@@ -217,12 +225,16 @@ function isBundlePatched(src) {
  * `isAdvisorUsingSubscription` into the advisor branch; AXn→wAn, tKr→aDi,
  * Ee→pi∘Ae, iA→_E, Wl→ml, S→k in 18.1.10, which added a
  * `startupPlaceholder` branch to the cost/context segments), so the cost
- * segment anchor and its injection point are per-layout too. */
+ * segment anchor and its injection point are per-layout too. 18.1.20
+ * renamed again (wAn→ano, xAn→lno, aDi→ria, lDi→iia, iA→CM, ml→Wl,
+ * Ee→ve, S→b) and added a peak/off-peak rate arrow to the cost segment;
+ * the theme-object local is `b` in 18.1.20+. */
 
 const COST_TAIL_V1 = 'if(!t&&!s&&!i&&!o)return{content:"",visible:!1};let l=[];if(t)l.push(xEs(t,i,S));else if(i)l.push(S.getSymbolPreset()==="nerd"&&S.icon.subscription?S.icon.subscription:"(sub)");if(o)l.push(`\\u2605 ${Ae(o)}`);if(s){let u=l.length?"+ ":"";l.push(`${u}${C_i(s,a,S)}`)}';
 const COST_ANCHOR_V1 = 'a=e.session.isAdvisorUsingSubscription?.()??!1;' + COST_TAIL_V1;
 const COST_ANCHOR_V2 = 'if(!t&&!s&&!i&&!o)return{content:"",visible:!1};let a=[];if(t)a.push(AXn(t,i,S));else if(i)a.push(S.getSymbolPreset()==="nerd"&&S.icon.subscription?S.icon.subscription:"(sub)");if(o)a.push(`\\u2605 ${Ee(o)}`);if(s){let l=a.length?"+ ":"",u=e.session.isAdvisorUsingSubscription?.()??!1;a.push(`${l}${tKr(s,u,S)}`)}';
 const COST_ANCHOR_V3 = 'if(!t&&!n&&!i&&!o)return{content:"",visible:!1};let a=[];if(t)a.push(e.startupPlaceholder?xAn(i,k):wAn(t,i,k));else if(i)a.push(k.getSymbolPreset()==="nerd"&&k.icon.subscription?k.icon.subscription:"(sub)");if(o)a.push(`\\u2605 ${pi(e,Ae(o))}`);if(n){let l=a.length?"+ ":"",u=e.session.isAdvisorUsingSubscription?.()??!1,p=e.startupPlaceholder?lDi(u,k):aDi(n,u,k);a.push(`${l}${p}`)}if(a.length===0)return{content:"",visible:!1};return{content:k.fg("statusLineCost",a.join(" ")),visible:!0}';
+const COST_ANCHOR_V4 = 'if(!t&&!n&&!a&&!o&&!i)return{content:"",visible:!1};let l=[];if(t||i)l.push(e.startupPlaceholder?lno(a,b):ano(t,a,b));else if(a)l.push(b.getSymbolPreset()==="nerd"&&b.icon.subscription?b.icon.subscription:"(sub)");if(i)l.push(i==="peak"?"\\u2191":"\\u2193");if(o)l.push(`\\u2605 ${pi(e,ve(o))}`);if(n){let u=l.length?"+ ":"",p=e.session.isAdvisorUsingSubscription?.()??!1,c=e.startupPlaceholder?iia(p,b):ria(n,p,b);l.push(`${u}${c}`)}if(l.length===0)return{content:"",visible:!1};return{content:b.fg("statusLineCost",l.join(" ")),visible:!0}';
 // Injected before the early-return in the cost segment. In V1 this must sit
 // AFTER `a=...` (mid let-chain — statements before it would not parse); in
 // V2/V3 the anchor starts at a statement boundary, so plain prepending
@@ -267,9 +279,22 @@ const LAYOUTS = [
 		fgRecv: "k",
 		fgArg: "n",
 	},
+	{
+		name: "18.1.20+",
+		formatterName: "ano",
+		fmtArgs: "e,t,s",
+		fmtLoc: "n",
+		costOut: tierPrefix("b") + COST_ANCHOR_V4,
+		costAnchor: COST_ANCHOR_V4,
+		ctxAnchor: 'let r=b.fg(n,e.startupPlaceholder?e7:CM(t,s,e.contextTokens));return{content:Wl(b.icon.context,`${r}${o}`),visible:!0}',
+		ctxWrap: "Wl",
+		fgRecv: "b",
+		fgArg: "n",
+	},
 ];
 /** Pristine cost formatter body; `args`/`loc` carry the minified param and
- * local names (`(e,t,n){let s=` in ≤18.0.11, `(e,t,s){let n=` in 18.1.10+). */
+ * local names (`(e,t,n){let s=` in ≤18.0.11, `(e,t,s){let n=` in 18.1.10+,
+ * unchanged in 18.1.20). */
 
 function fmtAnchor(name, args = "e,t,n", loc = "s") {
 	const [e, t, n] = args.split(",");

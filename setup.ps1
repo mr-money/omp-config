@@ -1,4 +1,4 @@
-﻿# 行为：检查/安装升级 OMP -> 复制配置 -> (可选)环境变量填 key -> 提示手动编辑 -> 跑 patch --setup
+﻿# 行为：升级 OMP 到补丁推荐版本 -> 复制配置 -> (可选)环境变量填 key -> 提示手动编辑 -> 跑 patch --setup
 
 $ErrorActionPreference = "Stop"
 
@@ -9,7 +9,7 @@ $PatchScript = Join-Path $OmpHome "omp-cny-patch.mjs"
 $bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $env:USERPROFILE ".bun" }
 $OmpPkgDir = Join-Path $bunInstall "install\global\node_modules\@oh-my-pi\pi-coding-agent"
 $OmpPkgBundle = Join-Path $OmpPkgDir "dist\cli.js"
-$RecommendedOmpVersion = "18.1.10"
+$RecommendedOmpVersion = "18.1.20"
 
 function Write-Step { param($msg) Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-OK   { param($msg) Write-Host "    OK  $msg" -ForegroundColor Green }
@@ -32,21 +32,23 @@ if (-not $bun) {
 }
 Write-OK "bun $(& bun --version) @ $($bun.Source)"
 
-# 检查并确保 bun 全局 bundle；旧 native exe 不再作为 patch 目标
-$ompExe = Join-Path $bunInstall "bin\omp.exe"
-$ompLayout = "bundle"
+# 检查并确保 bun 全局 bundle；旧 native exe 不再作为 patch 目标。
+# 始终升级到 $RecommendedOmpVersion（幂等：已是该版本则跳过），保证补丁锚点
+# 与 bundle 布局同步——补丁脚本只匹配其 LAYOUTS 覆盖的版本。
 $needInstall = $true
 if (Test-Path (Join-Path $OmpPkgDir "package.json")) {
-    try { $installed = (Get-Content (Join-Path $OmpPkgDir "package.json") -Raw | ConvertFrom-Json).version; $needInstall = ([version]$installed -lt [version]$RecommendedOmpVersion) } catch { $needInstall = $true }
+    try { $installed = (Get-Content (Join-Path $OmpPkgDir "package.json") -Raw | ConvertFrom-Json).version; $needInstall = ($installed -ne $RecommendedOmpVersion) } catch { $needInstall = $true }
 }
 if ($needInstall) {
     Write-Step "安装/升级 omp 到 $RecommendedOmpVersion"
     & bun install -g "@oh-my-pi/pi-coding-agent@$RecommendedOmpVersion"
     if ($LASTEXITCODE -ne 0) { Write-Fail "omp 安装/升级失败"; exit 1 }
+    if (-not (Test-Path (Join-Path $OmpPkgDir "package.json"))) { Write-Fail "升级后未找到 omp 包: $OmpPkgDir"; exit 1 }
 }
 if (-not (Test-Path $OmpPkgBundle)) { Write-Fail "升级后仍未找到 bundle: $OmpPkgBundle"; exit 1 }
 $actual = (Get-Content (Join-Path $OmpPkgDir "package.json") -Raw | ConvertFrom-Json).version
 if ([version]$actual -lt [version]"18.0.2") { Write-Fail "OMP 版本校验失败: $actual"; exit 1 }
+if ($actual -ne $RecommendedOmpVersion) { Write-Warn "omp 版本 $actual 与补丁推荐版本 $RecommendedOmpVersion 不一致，补丁可能因布局漂移失败" }
 Write-OK "omp bundle $actual"
 
 # 2. 确保目录存在
