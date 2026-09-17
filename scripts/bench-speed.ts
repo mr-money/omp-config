@@ -37,14 +37,12 @@ interface YmlRoot {
 
 // reasoning 模型的“关思考/降思考”参数猜测（各厂商不统一）。400 时自动去掉重试。
 // zhipu: GLM-5.3 系强制思考不接受 disabled，用 reasoning_effort 降档；旧 GLM 用 thinking.disabled。
-// amd: 平台参数无公开文档，按 Qwen 惯例 enable_thinking 试探，失败降级。
 function noThinkParams(provider: string, model: YmlModel): Record<string, unknown> | null {
   if (!model.reasoning) return null;
   if (provider === "zhipu") {
     if (/^glm-5\.3/.test(model.id)) return { reasoning_effort: "low" };
     return { thinking: { type: "disabled" } };
   }
-  if (provider === "amd") return { enable_thinking: false };
   return null;
 }
 
@@ -200,7 +198,7 @@ async function benchOne(job: Job): Promise<BenchResult> {
   const approx = m.usageTokens === null;
   const tokens = approx ? m.deltaChunks : m.usageTokens;
   if (approx) notes.push("(approx)");
-  // 单增量 chunk（整段一次性到达，AMD 网关常见）时生成时长为 0，
+  // 单增量 chunk（整段一次性到达，部分网关常见）时生成时长为 0，
   // tok/s 无意义——回退用 TTFT 作分母给出下界估计，并标注
   let tokPerSec = 0;
   if (m.genMs > 0) {

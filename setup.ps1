@@ -78,12 +78,11 @@ function Get-ProviderApiKeys {
 # provider 名 -> 占位符（apiKey: <XXX> 形态）。用于环境变量注入与占位符盘点。
 $script:ProviderPlaceholders = @{
     "volcengine-coding" = "<YOUR_API_KEY>"
-    "amd"               = "<AMD_API_KEY>"
     "zhipu"             = "<ZHIPU_API_KEY>"
 }
 
 # 目标机已有真实 key（非占位）则提取保留，待复制后回填——
-# 不能跳过整个文件，否则新模型定义（glm-5.3 / doubao-seed-2.0-mini / amd 等）永不部署
+# 不能跳过整个文件，否则新模型定义（glm-5.3 / doubao-seed-2.0-mini / agent-plan 等）永不部署
 $existingKeys = @{}   # provider -> key
 if ((Test-Path $dstModels) -and (Test-Path $srcModels)) {
     $dstContent = [System.IO.File]::ReadAllText($dstModels)
@@ -188,11 +187,11 @@ if (Test-Path $lspJson) {
     }
 }
 
-# 6. API Key：环境变量自动注入（OMP_API_KEY / AMD_API_KEY / ZHIPU_API_KEY），
+# 6. API Key：环境变量自动注入（OMP_API_KEY / ZHIPU_API_KEY），
 #    不再交互输入。没填的保留占位符，结尾摘要会提示手动编辑。
 Write-Step "配置 API Key（环境变量注入，无交互）"
 $modelsYml = Join-Path $AgentDir "models.yml"
-$envVarByProvider = @{ "volcengine-coding" = "OMP_API_KEY"; "amd" = "AMD_API_KEY"; "zhipu" = "ZHIPU_API_KEY" }
+$envVarByProvider = @{ "volcengine-coding" = "OMP_API_KEY"; "zhipu" = "ZHIPU_API_KEY" }
 if (Test-Path $modelsYml) {
     $yml = [System.IO.File]::ReadAllText($modelsYml)
 

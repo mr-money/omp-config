@@ -65,7 +65,7 @@ cd omp-config
 1. 校验 bun / omp 已安装
 2. 升级 omp 到推荐版本（`$RecommendedOmpVersion`，非匹配即重装）、复制 `agent/` → `~/.omp/agent/`、`skills/` → `~/.omp/agent/skills/`
 3. 探测本机 pwsh / gopls / python 路径，写回对应配置
-4. 注入 API Key：**不再交互输入**——仅从环境变量（`OMP_API_KEY`/`AMD_API_KEY`/`ZHIPU_API_KEY`）读取，设了就写入对应 provider；未设置则保留 `<...>` 占位符。重部署时**按 provider 保留本地已填的真实 key**（通用扫描全部 provider，非硬编码），结尾列出仍为占位符的 provider 与文件路径，提示手动编辑
+4. 注入 API Key：**不再交互输入**——仅从环境变量（`OMP_API_KEY`/`ZHIPU_API_KEY`）读取，设了就写入对应 provider；未设置则保留 `<...>` 占位符。重部署时**按 provider 保留本地已填的真实 key**（通用扫描全部 provider，非硬编码），结尾列出仍为占位符的 provider 与文件路径，提示手动编辑
 5. 完成（本分支不部署任何 bundle 补丁，omp 保持原样）
 
 只读健康检查：`.\doctor.ps1`。它检查 Bun、OMP/bundle 版本、三个配置文件存在性及 gopls/python 是否可用，不会自动修复。注意它只查部署健康，不查 live 与仓库之间的内容漂移——漂移用 `.\sync-from-live.ps1` 的预检查看（无差异时会明确输出"无需同步"）。
@@ -74,7 +74,7 @@ cd omp-config
 
 | 文件 | 字段 | 部署方式 | 说明 |
 |------|------|----------|------|
-| `~/.omp/agent/models.yml` | `apiKey` | 环境变量注入 / 本地手动编辑 | 各 provider 的 key：火山 `OMP_API_KEY`、AMD `AMD_API_KEY`、智谱 `ZHIPU_API_KEY`。setup **不再交互**——设了环境变量就自动写入，没设则保留 `<...>` 占位符；重部署按 provider 保留本地已填真实 key，结尾列出未填项 |
+| `~/.omp/agent/models.yml` | `apiKey` | 环境变量注入 / 本地手动编辑 | 各 provider 的 key：火山 `OMP_API_KEY`、智谱 `ZHIPU_API_KEY`。setup **不再交互**——设了环境变量就自动写入，没设则保留 `<...>` 占位符；重部署按 provider 保留本地已填真实 key，结尾列出未填项 |
 | `~/.omp/agent/lsp.json` | `servers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`gopls` / `python -m pylsp`）；探测到绝对路径则写回 |
 | `~/.omp/agent/config.yml` | `shellPath` | setup 探测写入 | 检测到 pwsh 则自动写入；未检测到则省略（omp 回退到 cmd.exe） |
 | `~/.omp/agent/config.yml` | `statusLine` | 直接复制 | 自定义状态栏：custom 段列表（无 cost 段）、git 只显分支名、path 缩写、模型名带思考档位 |
@@ -123,11 +123,11 @@ statusLine:
 | `task` | glm-5-3-flash | `auto` | 任务子代理（委派多步任务） |
 | `commit` | doubao-seed-2.0-mini | `off` | 生成 commit message |
 | `vision` | doubao-seed-evolving | `auto` | 视觉/截图理解（方舟多模态） |
-| `Free` | amd/Qwen3.8-Flash-Next | `high` | AMD 免费通道（免费提供商，不计费） |
 | `Zhipu` | zhipu/glm-5.3-flash | `high` | 智谱 GLM（自有余额付费，备用） |
 | `DeepSeek` | deepseek/deepseek-flash | `auto` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用，不在 `cycleOrder` 中。旧模型名 `deepseek-v4-flash` 等仍可调用，由 V4.1-Flash 服务并按 Flash 计价） |
+| `agent-plan` | deepseek-v4.1-flash | `high` | 火山方舟 Agent Plan 通道（订阅制，1M 上下文，`reasoning`；服务端存在间歇性 TTFT 挂起，卡住时重试） |
 
-**思考档位循环 (`cycleOrder`)**: `smol` → `default` → `slow` → `Free`，逐级升档。
+**思考档位循环 (`cycleOrder`)**: `smol` → `default` → `slow` → `agent-plan`，逐级升档。
 
 ### 长期记忆 (`config.yml` → `memory` / `mnemopi`)
 
@@ -142,7 +142,7 @@ mnemopi:
 
 设计依据（源码验证，pi-mnemopi 18.x）：
 
-- **`per-project-tagged` 优于 `per-project`**：写入项目隔离，召回还能带上全局记忆——跨项目通用经验（如 AMD 网关踩坑）仍可浮现。
+- **`per-project-tagged` 优于 `per-project`**：写入项目隔离，召回还能带上全局记忆——跨项目通用经验（如方舟网关踩坑）仍可浮现。
 - **不要开 `noEmbeddings: true`**：FTS5 默认 `unicode61` tokenizer 对中文按整句切分（无分词），关掉向量召回会让中文查询只能逐字命中；`multilingual` e5 本地推理无网络依赖、无费用，是中文召回主力。
 - **`llmMode: smol`**：事实抽取/整理走 `tiny`→`smol` 角色（doubao-seed-2.0-mini），免费额度内。
 - **consolidation 需手动触发**：正常退出只做轻量 drain，working → episodic 晋级与图谱构建仅在 `/memory enqueue` 时发生（且只整理 >12h 的行）；重要会话结束前跑一次。
@@ -158,17 +158,11 @@ mnemopi:
 - **doubao-seed-evolving** — 顾问 / 设计 / 视觉（`advisor`、`designer`、`vision` 角色）（1M 上下文，多模态）
 
 火山方舟 Agent Plan（`agent-plan` provider，订阅制，OpenAI 兼容）：
-- **deepseek-v4.1-flash** — Agent Plan 通道 DeepSeek V4.1 Flash（1M 上下文，多模态文本+图像，393K 输出）
+- **deepseek-v4.1-flash** — Agent Plan 通道 DeepSeek V4.1 Flash（1M 上下文，多模态文本+图像，393K 输出，`reasoning`）
 - 与 coding plan 共用方舟 API Key，`baseUrl: https://ark.cn-beijing.volces.com/api/plan/v3`；仓库中占位脱敏，部署后本地填入
+- ⚠️ 实测该端点对 deepseek 存在**服务端间歇性 TTFT 挂起**（约 50% 概率 >60s 零字节，输入 ≥~5K tokens 时出现，小输入秒回；doubao 同端点正常）。配置无法修复——omp 卡 "working" 时 esc 重试即可；持续出现持 request id 找火山报障
 
 图片生成 Skill（`~/.omp/agent/skills/byted-ark-seedream-skill/`）：豆包 Seedream 生图（Agent Plan 专属版），支持文生图/图生图/连贯组图/联网搜索；API Key 走 `~/.omp/agent/.env` 的 `ARK_SEEDREAM_API_KEY`，图片默认存启动目录 `Seedream-Images/`（已加入 `.gitignore`）。
-
-AMD 免费通道（`amd` provider，AMD Radeon 开发者平台，OpenAI 兼容）：
-- **DeepSeek-V4-Flash-Vision-Exp** — 视觉模型（1M 上下文，支持文本+图像，`reasoning`；曾用于 `vision`/`Free` 角色，因 TTFT 10–50s 已淡出高频角色）
-- **DeepSeek-V4-Flash** — 纯文本（1M 上下文，`reasoning`）
-- **Qwen3.8-Flash-Next** — `Free` 角色（262K 上下文，纯文本，`reasoning`）
-
-`amd` provider 为**免费额度**；`apiKey`（`rc-` 前缀）为 AMD 开发者平台 key，仓库中保持占位脱敏，部署后本地手动编辑 `~/.omp/agent/models.yml` 填入。
 
 智谱 GLM（`zhipu` provider，智谱开放平台，OpenAI 兼容）：
 - **glm-5.3-flash** — `Zhipu` 角色备用；多模态（文本+图像），1M 上下文，131K 输出上限，`reasoning`（思考档位 `low/high/max`，默认 `max`）
@@ -179,7 +173,7 @@ AMD 免费通道（`amd` provider，AMD Radeon 开发者平台，OpenAI 兼容�
 
 ### 新增模型提供商节点（`models.yml`）
 
-在 `providers:` 下追加一个 provider 块即可（参考现有 `amd` / `zhipu` 节点）。**无需阅读 omp 底层代码**，只需满足以下几点：
+在 `providers:` 下追加一个 provider 块即可（参考现有 `zhipu` / `agent-plan` 节点）。**无需阅读 omp 底层代码**，只需满足以下几点：
 
 ```yaml
 providers:
@@ -211,7 +205,7 @@ providers:
 - **多模态**：厂商支持图像就把 `input` 写 `[text, image]`，omp 会自动按 `image_url` 内容块发送。
 - **计价说明**：模型未写 `cost` 视为免费；写了 `cost` 按元/百万 tokens 记账。本分支状态栏无 cost 段，`cost` 块只作记账真源（`cny-patch-tiers` 分支会把它显示成 ¥）。
 - **验证**：`omp models ls` 应能看到新 provider 与模型；若有 `models.yml validation failed` 报错，说明字段名或取值不合法（对照上面模板检查）。
-- **占位符约定**：仓库中 `apiKey` 一律用 `<XXX_API_KEY>` 占位脱敏；**setup 不再交互填 key**——部署时按 provider 保留本地已填的真实 key，未填项在结尾列出并提示手动编辑 `~/.omp/agent/models.yml`。已知 provider（火山/AMD/智谱）可选设环境变量（`OMP_API_KEY`/`AMD_API_KEY`/`ZHIPU_API_KEY`）自动注入；新增 provider 若要环境变量注入，需在 `setup.ps1` 的 `$envVarByProvider` 登记其环境变量名。
+- **占位符约定**：仓库中 `apiKey` 一律用 `<XXX_API_KEY>` 占位脱敏；**setup 不再交互填 key**——部署时按 provider 保留本地已填的真实 key，未填项在结尾列出并提示手动编辑 `~/.omp/agent/models.yml`。已知 provider（火山/智谱）可选设环境变量（`OMP_API_KEY`/`ZHIPU_API_KEY`）自动注入；新增 provider 若要环境变量注入，需在 `setup.ps1` 的 `$envVarByProvider` 登记其环境变量名。
 
 > **内置 provider 覆盖**：omp 内置 provider（`deepseek`、`anthropic`、`openai` 等）不写 `baseUrl`/`models` 也能在 `providers:` 下建块，只写 `modelOverrides` 即可覆盖内置模型的任意字段（`cost`/`contextWindow` 等）——`cost` 未覆盖的字段逐项回退内置价。
 
@@ -240,10 +234,9 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 |------|------|
 | doubao-seed 系**不尊重** `max_tokens`（实测一次输出 871 token，思考 token 不计入上限） | 检测 `completion_tokens` 超限后改用标准字段 `max_completion_tokens` 重试 → `(cap via max_completion_tokens)`；仍超限标 `(cap ignored)` |
 | 厂商"关思考"参数被拒（400） | 去掉扩展参数降级重试 → `(extras off)` |
-| AMD 网关**整段一次性返回**（单增量 chunk），生成时长为 0 | tok/s 退化为用 TTFT 作分母的**下界估计** → `(single-chunk, rate~lower bound)`；此时真实瓶颈看 TTFT |
-| AMD 思考增量在 `delta.reasoning`（非 `reasoning_content`） | 增量检测同时认三个字段，否则 AMD 的 TTFT 会虚高成"思考结束后首个正文 token" |
+| 部分网关**整段一次性返回**（单增量 chunk），生成时长为 0 | tok/s 退化为用 TTFT 作分母的**下界估计** → `(single-chunk, rate~lower bound)`；此时真实瓶颈看 TTFT |
+| 部分厂商思考增量在 `delta.reasoning`（非 `reasoning_content`） | 增量检测同时认三个字段，否则 TTFT 会虚高成"思考结束后首个正文 token" |
 | 智谱 **GLM-5.3 起强制思考**，`thinking: {type: disabled}` 直接报错 | 改用 `reasoning_effort: low` 降档；更早的 GLM 仍用 `thinking.disabled` |
-| AMD 平台并发限流（`global_concurrency_rate_limit_exceeded`，64 并发） | 记 `FAIL` 不重试；重跑即可，避开挤满时段 |
 
 **实测参考**（一轮全量，仅供横向比较；TTFT 受网络与厂商排队影响波动较大）：
 
@@ -254,15 +247,12 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 | volcengine-coding | doubao-seed-2.0-mini | 521 | 91.7 |
 | volcengine-coding | doubao-seed-evolving | 857 | 30.0 |
 | volcengine-coding | deepseek-v4-1-flash-260910 | 444 ² | 85.9 ² |
-| amd | DeepSeek-V4-Flash-Vision-Exp | 50714 | ~0.7 ¹ |
-| amd | DeepSeek-V4-Flash | 11056 | ~2.1 ¹ |
-| amd | Qwen3.8-Flash-Next | 2211 | 101.4 |
 | zhipu | glm-5.3-flash | 750 | 30.0 |
 
-¹ 单 chunk 一次性返回，tok/s 为下界；真实瓶颈是 TTFT（AMD 免费通道常排在几十秒队列后）。
+¹ 单 chunk 一次性返回，tok/s 为下界；真实瓶颈是 TTFT。
 ² 方舟 v4.1 模型暂未接入 coding plan（实测 `UnsupportedModel`），该行沿用 v4 旧版实测值（TTFT ~444ms、~86 tok/s），待开通后重测更新。
 
-选型提示：**火山 doubao-seed-2.0-mini / deepseek-v4-flash** 首 token 快且吐字最快，适合 `smol`/`commit`/`task` 等高频轻任务；**AMD 免费通道**首 token 动辄 10–50s，只适合不催人的后台任务（`Free` 角色）。
+选型提示：**火山 doubao-seed-2.0-mini / deepseek-v4-flash** 首 token 快且吐字最快，适合 `smol`/`commit`/`task` 等高频轻任务。
 
 > 本分支（master）为**纯净配置**：不部署任何 bundle 补丁，状态栏不显示 cost（见「状态栏」一节）。需要人民币 cost 显示时，切到 `cny-patch-tiers` 分支部署（含 `scripts/omp-cny-patch.mjs` 三态补丁：coding plan / free / ¥）。
 
