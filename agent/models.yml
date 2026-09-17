@@ -37,11 +37,25 @@ providers:
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens
-      - id: deepseek-v4-flash-ga-260731
-        name: DeepSeek V4 Flash(ark)
+      - id: deepseek-v4-1-flash-260910
+        name: DeepSeek V4.1 Flash(ark)
         input: [text]
         contextWindow: 1024000
         maxTokens: 65536
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
+  agent-plan:
+    baseUrl: https://ark.cn-beijing.volces.com/api/plan/v3
+    api: openai-completions
+    apiKey: <ARK_API_KEY>  # 替换为 Agent Plan API Key
+    authHeader: true
+    models:
+      - id: deepseek-v4.1-flash
+        name: DeepSeek V4.1 Flash (Agent Plan)
+        input: [text, image]
+        contextWindow: 1048576
+        maxTokens: 393216
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens

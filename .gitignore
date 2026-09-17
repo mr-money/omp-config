@@ -6,3 +6,5 @@ __pycache__/
 node_modules/
 bun.lock
 package-lock.json
+# Seedream generated images
+Seedream-Images/

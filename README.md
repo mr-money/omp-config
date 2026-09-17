@@ -153,9 +153,15 @@ mnemopi:
 内置火山引擎大模型 API（方舟，coding plan 订阅制）：
 - **glm-5-3-flash** — 默认模型（1M 上下文）
 - **glm-5.3** — 规划 / 慢速深度推理（1M 上下文）
-- **deepseek-v4-flash-ga-260731** — 方舟 DeepSeek V4 Flash（1M 上下文；TTFT ~440ms、~86 tok/s，全表最快；`smol` 角色已改走官方 `deepseek/deepseek-flash`，此模型保留作方舟通道备选）
+- **deepseek-v4-1-flash-260910** — 方舟 DeepSeek V4.1 Flash（1M 上下文；升级自 `deepseek-v4-flash-ga-260731`，当前方舟 coding plan 尚未接入该模型，配置已切换、请求待开通后生效；`smol` 角色已改走官方 `deepseek/deepseek-flash`，此模型保留作方舟通道备选）
 - **doubao-seed-2.0-mini** — 轻量 / commit / mnemopi 记忆抽取（`tiny`/`commit` 角色）
 - **doubao-seed-evolving** — 顾问 / 设计 / 视觉（`advisor`、`designer`、`vision` 角色）（1M 上下文，多模态）
+
+火山方舟 Agent Plan（`agent-plan` provider，订阅制，OpenAI 兼容）：
+- **deepseek-v4.1-flash** — Agent Plan 通道 DeepSeek V4.1 Flash（1M 上下文，多模态文本+图像，393K 输出）
+- 与 coding plan 共用方舟 API Key，`baseUrl: https://ark.cn-beijing.volces.com/api/plan/v3`；仓库中占位脱敏，部署后本地填入
+
+图片生成 Skill（`~/.omp/agent/skills/byted-ark-seedream-skill/`）：豆包 Seedream 生图（Agent Plan 专属版），支持文生图/图生图/连贯组图/联网搜索；API Key 走 `~/.omp/agent/.env` 的 `ARK_SEEDREAM_API_KEY`，图片默认存启动目录 `Seedream-Images/`（已加入 `.gitignore`）。
 
 AMD 免费通道（`amd` provider，AMD Radeon 开发者平台，OpenAI 兼容）：
 - **DeepSeek-V4-Flash-Vision-Exp** — 视觉模型（1M 上下文，支持文本+图像，`reasoning`；曾用于 `vision`/`Free` 角色，因 TTFT 10–50s 已淡出高频角色）
@@ -247,13 +253,14 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 | volcengine-coding | glm-5-3-flash | 4940 | 23.1 |
 | volcengine-coding | doubao-seed-2.0-mini | 521 | 91.7 |
 | volcengine-coding | doubao-seed-evolving | 857 | 30.0 |
-| volcengine-coding | deepseek-v4-flash-ga-260731 | 444 | 85.9 |
+| volcengine-coding | deepseek-v4-1-flash-260910 | 444 ² | 85.9 ² |
 | amd | DeepSeek-V4-Flash-Vision-Exp | 50714 | ~0.7 ¹ |
 | amd | DeepSeek-V4-Flash | 11056 | ~2.1 ¹ |
 | amd | Qwen3.8-Flash-Next | 2211 | 101.4 |
 | zhipu | glm-5.3-flash | 750 | 30.0 |
 
 ¹ 单 chunk 一次性返回，tok/s 为下界；真实瓶颈是 TTFT（AMD 免费通道常排在几十秒队列后）。
+² 方舟 v4.1 模型暂未接入 coding plan（实测 `UnsupportedModel`），该行沿用 v4 旧版实测值（TTFT ~444ms、~86 tok/s），待开通后重测更新。
 
 选型提示：**火山 doubao-seed-2.0-mini / deepseek-v4-flash** 首 token 快且吐字最快，适合 `smol`/`commit`/`task` 等高频轻任务；**AMD 免费通道**首 token 动辄 10–50s，只适合不催人的后台任务（`Free` 角色）。
 
