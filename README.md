@@ -125,7 +125,7 @@ statusLine:
 | `vision` | doubao-seed-evolving | `auto` | 视觉/截图理解（方舟多模态） |
 | `Zhipu` | zhipu/glm-5.3-flash | `high` | 智谱 GLM（自有余额付费，备用） |
 | `DeepSeek` | deepseek/deepseek-flash | `auto` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用，不在 `cycleOrder` 中。旧模型名 `deepseek-v4-flash` 等仍可调用，由 V4.1-Flash 服务并按 Flash 计价） |
-| `agent-plan` | deepseek-v4.1-flash | `high` | 火山方舟 Agent Plan 通道（订阅制，1M 上下文，`reasoning`；服务端存在间歇性 TTFT 挂起，卡住时重试） |
+| `agent-plan` | glm-5-3-flash | `auto` | 火山方舟 Agent Plan 通道（订阅制，1M 上下文，多模态；agent-plan 节点与 coding plan 各有一条 GLM 5.3 Flash，可在 `/models` 里区分选择） |
 
 **思考档位循环 (`cycleOrder`)**: `smol` → `default` → `slow` → `agent-plan`，逐级升档。
 
@@ -158,7 +158,8 @@ mnemopi:
 - **doubao-seed-evolving** — 顾问 / 设计 / 视觉（`advisor`、`designer`、`vision` 角色）（1M 上下文，多模态）
 
 火山方舟 Agent Plan（`agent-plan` provider，订阅制，OpenAI 兼容）：
-- **deepseek-v4.1-flash** — Agent Plan 通道 DeepSeek V4.1 Flash（1M 上下文，多模态文本+图像，393K 输出，`reasoning`）
+- **deepseek-v4.1-flash** — Agent Plan 通道 DeepSeek V4.1 Flash（1M 上下文，多模态文本+图像，393K 输出，`reasoning`；实测 TTFT ~1.4-1.9s、~155-180 tok/s，小输入正常，大输入警惕 TTFT 挂起）
+- **glm-5-3-flash** — Agent Plan 通道 GLM 5.3 Flash（多模态文本+图像，1M 上下文；实测 TTFT ~1.2s、~71 tok/s，与 coding plan 同名模型互为备用）
 - 与 coding plan 共用方舟 API Key，`baseUrl: https://ark.cn-beijing.volces.com/api/plan/v3`；仓库中占位脱敏，部署后本地填入
 - ⚠️ 实测该端点对 deepseek 存在**服务端间歇性 TTFT 挂起**（约 50% 概率 >60s 零字节，输入 ≥~5K tokens 时出现，小输入秒回；doubao 同端点正常）。配置无法修复——omp 卡 "working" 时 esc 重试即可；持续出现持 request id 找火山报障
 
@@ -247,10 +248,12 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 | volcengine-coding | doubao-seed-2.0-mini | 521 | 91.7 |
 | volcengine-coding | doubao-seed-evolving | 857 | 30.0 |
 | volcengine-coding | deepseek-v4-1-flash-260910 | 444 ² | 85.9 ² |
+| agent-plan | deepseek-v4.1-flash | 1381 | 177.5 |
+| agent-plan | glm-5-3-flash | 1185 | 71.2 |
 | zhipu | glm-5.3-flash | 750 | 30.0 |
 
 ¹ 单 chunk 一次性返回，tok/s 为下界；真实瓶颈是 TTFT。
-² 方舟 v4.1 模型暂未接入 coding plan（实测 `UnsupportedModel`），该行沿用 v4 旧版实测值（TTFT ~444ms、~86 tok/s），待开通后重测更新。
+² 方舟 v4.1 模型暂未接入 coding plan（实测 `UnsupportedModel`），该行沿用 v4 旧版实测值（TTFT ~444ms、~86 tok/s），待开通后重测更新。agent-plan 两行为 2026-09-18 实测（小输入；大输入警惕该端点 TTFT 挂起）。
 
 选型提示：**火山 doubao-seed-2.0-mini / deepseek-v4-flash** 首 token 快且吐字最快，适合 `smol`/`commit`/`task` 等高频轻任务。
 

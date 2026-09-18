@@ -60,6 +60,14 @@ providers:
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens
+      - id: glm-5-3-flash
+        name: GLM 5.3 Flash (Agent Plan)
+        input: [text, image]
+        contextWindow: 1024000
+        maxTokens: 65536
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
   deepseek:
     modelOverrides:
       deepseek-flash:
