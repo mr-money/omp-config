@@ -3,16 +3,16 @@ providers:
     []
 modelRoles:
   plan: volcengine-coding/glm-5.3:high
-  slow: volcengine-coding/glm-5.3:max
+  slow: volcengine-coding/glm-5.3:high
   advisor: volcengine-coding/doubao-seed-evolving:medium
   commit: volcengine-coding/doubao-seed-2.0-mini:off
-  smol: deepseek/deepseek-flash:auto
+  smol: volcengine-coding/deepseek-v4-1-flash-260910:auto
   default: volcengine-coding/glm-5-3-flash
   tiny: volcengine-coding/doubao-seed-2.0-mini:off
   vision: volcengine-coding/glm-5-3-flash:auto
   DeepSeek: deepseek/deepseek-flash:auto
-  designer: volcengine-coding/doubao-seed-evolving:medium
-  agent-plan: agent-plan/glm-5-3-flash:auto
+  task: volcengine-coding/glm-5-3-flash:auto
+  agent-plan: agent-plan/deepseek-v4.1-flash:high
 defaultThinkingLevel: auto
 memory:
   backend: mnemopi
@@ -28,8 +28,18 @@ cycleOrder:
   - agent-plan
 statusLine:
   preset: custom
-  leftSegments: [pi, vim, model, mode, collab, path, git, pr, context_pct]
-  rightSegments: [session_name]
+  leftSegments:
+    - pi
+    - vim
+    - model
+    - mode
+    - collab
+    - path
+    - git
+    - pr
+    - context_pct
+  rightSegments:
+    - session_name
   separator: powerline-thin
   segmentOptions:
     git:
@@ -44,6 +54,8 @@ statusLine:
     model:
       showThinkingLevel: true
 composer:
-  shape: band
+  shape: box
 dev:
   autoqaConsent: granted
+theme:
+  dark: titanium
