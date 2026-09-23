@@ -124,6 +124,37 @@ if (Test-Path $skillsSrc) {
     Write-OK "skills/ -> ~/.omp/agent/skills/"
 }
 
+# 3.5 安装 omp 插件（remote-pi 等）。清单: plugins.json；幂等：已装且启用则跳过。
+$pluginsManifest = Join-Path $RepoRoot "plugins.json"
+if (Test-Path $pluginsManifest) {
+    Write-Step "安装 omp 插件"
+    $omp = Get-Command omp -ErrorAction SilentlyContinue
+    if (-not $omp) {
+        Write-Warn "未找到 omp 命令，跳过插件安装（可稍后手动: omp plugin install npm:remote-pi）"
+    } else {
+        $plugins = Get-Content $pluginsManifest -Raw | ConvertFrom-Json
+        foreach ($spec in $plugins.plugins) {
+            $name = ($spec -split '@')[0]
+            $name = ($name -replace '^npm:', '')
+            $installed = & omp plugin list 2>$null | Select-String "^\s*[●○]\s*$([regex]::Escape($name))@"
+            $locked = $false
+            $lockPath = Join-Path $OmpHome "plugins\omp-plugins.lock.json"
+            if (Test-Path $lockPath) {
+                $lock = Get-Content $lockPath -Raw | ConvertFrom-Json
+                $locked = $lock.plugins.PSObject.Properties.Name -contains $name
+            }
+            if ($installed -or $locked) {
+                Write-OK "插件 $name 已安装，跳过"
+            } else {
+                Write-Step "安装插件 $spec"
+                & omp plugin install $spec
+                if ($LASTEXITCODE -eq 0) { Write-OK "插件 $spec 安装成功" }
+                else { Write-Warn "插件 $spec 安装失败（网络/registry 问题），不影响其他配置" }
+            }
+        }
+    }
+}
+
 # 4. 探测 shell 路径（pwsh 优先），写回 config.yml
 Write-Step "探测 shell 路径"
 $configYml = Join-Path $AgentDir "config.yml"
