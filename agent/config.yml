@@ -12,7 +12,7 @@ modelRoles:
   vision: volcengine-coding/glm-5-3-flash:auto
   DeepSeek: deepseek/deepseek-flash:auto
   task: volcengine-coding/glm-5-3-flash:auto
-  agent-plan: agent-plan/deepseek-v4.1-flash:high
+  agent-plan: agent-plan/glm-5-3-flash:auto
 defaultThinkingLevel: auto
 memory:
   backend: mnemopi
