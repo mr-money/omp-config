@@ -8,3 +8,6 @@ bun.lock
 package-lock.json
 # Seedream generated images
 Seedream-Images/
+
+# remote-pi local session state
+.pi/
