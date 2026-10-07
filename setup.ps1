@@ -77,7 +77,7 @@ function Get-ProviderApiKeys {
 
 # provider 名 -> 占位符（apiKey: <XXX> 形态）。用于环境变量注入与占位符盘点。
 $script:ProviderPlaceholders = @{
-    "volcengine-coding" = "<YOUR_API_KEY>"
+    "agent-plan"       = "<ARK_API_KEY>"
     "zhipu"             = "<ZHIPU_API_KEY>"
 }
 
@@ -191,7 +191,7 @@ if (Test-Path $lspJson) {
 #    不再交互输入。没填的保留占位符，结尾摘要会提示手动编辑。
 Write-Step "配置 API Key（环境变量注入，无交互）"
 $modelsYml = Join-Path $AgentDir "models.yml"
-$envVarByProvider = @{ "volcengine-coding" = "OMP_API_KEY"; "zhipu" = "ZHIPU_API_KEY" }
+$envVarByProvider = @{ "agent-plan" = "OMP_AGENT_PLAN_KEY"; "zhipu" = "ZHIPU_API_KEY" }
 if (Test-Path $modelsYml) {
     $yml = [System.IO.File]::ReadAllText($modelsYml)
 

@@ -24,16 +24,16 @@ providers:
     - mojeek
     - public
 modelRoles:
-  plan: commandcode/gpt-6.1-sol:auto
+  plan: commandcode/claude-sonnet-5-5:auto
   slow: commandcode/claude-sonnet-5-5:auto
-  advisor: volcengine-coding/doubao-seed-evolving:medium
+  advisor: commandcode/z-ai/glm-5.3-flash:high
   commit: commandcode/inclusionai/ling-3.1-flash:free:auto
-  smol: commandcode/gpt-6.1-sol:auto
-  default: commandcode/gpt-6-luna
+  smol: commandcode/gpt-6-luna:auto
+  default: commandcode/deepseek/deepseek-v4.1-flash
   tiny: commandcode/inclusionai/ling-3.1-flash:free:auto
   vision: commandcode/z-ai/glm-5.3-flash:high
   DeepSeek: deepseek/deepseek-flash:auto
-  task: volcengine-coding/glm-5-3-flash:auto
+  task: commandcode/inclusionai/ling-3.1-flash:free:auto
   agent-plan: agent-plan/deepseek-v4.1-flash:high
 defaultThinkingLevel: auto
 memory:
@@ -44,10 +44,10 @@ mnemopi:
   recallLimit: 10
 hideThinkingBlock: true
 cycleOrder:
-  - smol
   - default
+  - smol
   - slow
-  - agent-plan
+  - tiny
 statusLine:
   preset: custom
   leftSegments:
@@ -81,6 +81,6 @@ dev:
   autoqaConsent: granted
 theme:
   dark: titanium
-extendedContext: true
+extendedContext: false
 images:
   describeForTextModels: true

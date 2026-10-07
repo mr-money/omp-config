@@ -65,7 +65,7 @@ cd omp-config
 1. 校验 bun / omp 已安装
 2. 升级 omp 到推荐版本（`$RecommendedOmpVersion`，非匹配即重装）、复制 `agent/` → `~/.omp/agent/`、`skills/` → `~/.omp/agent/skills/`
 3. 探测本机 pwsh / gopls / python 路径，写回对应配置
-4. 注入 API Key：**不再交互输入**——仅从环境变量（`OMP_API_KEY`/`ZHIPU_API_KEY`）读取，设了就写入对应 provider；未设置则保留 `<...>` 占位符。重部署时**按 provider 保留本地已填的真实 key**（通用扫描全部 provider，非硬编码），结尾列出仍为占位符的 provider 与文件路径，提示手动编辑
+4. 注入 API Key：**不再交互输入**——仅从环境变量（`OMP_AGENT_PLAN_KEY`/`ZHIPU_API_KEY`）读取，设了就写入对应 provider；未设置则保留 `<...>` 占位符。重部署时**按 provider 保留本地已填的真实 key**（通用扫描全部 provider，非硬编码），结尾列出仍为占位符的 provider 与文件路径，提示手动编辑
 5. 完成（本分支不部署任何 bundle 补丁，omp 保持原样）
 
 只读健康检查：`.\doctor.ps1`。它检查 Bun、OMP/bundle 版本、三个配置文件存在性及 gopls/python 是否可用，不会自动修复。注意它只查部署健康，不查 live 与仓库之间的内容漂移——漂移用 `.\sync-from-live.ps1` 的预检查看（无差异时会明确输出"无需同步"）。
@@ -74,11 +74,12 @@ cd omp-config
 
 | 文件 | 字段 | 部署方式 | 说明 |
 |------|------|----------|------|
-| `~/.omp/agent/models.yml` | `apiKey` | 环境变量注入 / 本地手动编辑 | 各 provider 的 key：火山 `OMP_API_KEY`、智谱 `ZHIPU_API_KEY`。setup **不再交互**——设了环境变量就自动写入，没设则保留 `<...>` 占位符；重部署按 provider 保留本地已填真实 key，结尾列出未填项 |
+| `~/.omp/agent/models.yml` | `apiKey` | 环境变量注入 / 本地手动编辑 | 各 provider 的 key：Agent Plan `OMP_AGENT_PLAN_KEY`、智谱 `ZHIPU_API_KEY`。setup **不再交互**——设了环境变量就自动写入，没设则保留 `<...>` 占位符；重部署按 provider 保留本地已填真实 key，结尾列出未填项 |
 | `~/.omp/agent/lsp.json` | `servers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`gopls` / `python -m pylsp`）；探测到绝对路径则写回 |
 | `~/.omp/agent/config.yml` | `shellPath` | setup 探测写入 | 检测到 pwsh 则自动写入；未检测到则省略（omp 回退到 cmd.exe） |
 | `~/.omp/agent/config.yml` | `statusLine` | 直接复制 | 自定义状态栏：custom 段列表（无 cost 段）、git 只显分支名、path 缩写、模型名带思考档位 |
 | `~/.omp/agent/settings.json` | — | 直接复制 | 不再单独设 shellPath，统一走 config.yml |
+| `~/.omp/agent/config.yml` | `extendedContext` | 直接复制 | 当前为 `false`；`cycleOrder` 为 `default → smol → slow → tiny` |
 
 ### 验证
 
@@ -114,20 +115,45 @@ statusLine:
 
 | 角色 | 模型 | 思考档位 | 用途 |
 |------|------|----------|------|
-| `default` | glm-5-3-flash | — | 默认主模型，日常编码 |
-| `plan` | GLM-5.3 | `high` | 任务规划阶段 |
-| `slow` | GLM-5.3 | `max` | 深度推理 / 复杂问题 |
-| `smol` | deepseek/deepseek-flash | `auto` | 轻量快速任务（官方 DeepSeek API，DeepSeek-V4.1-Flash，按量计费） |
-| `advisor` | doubao-seed-evolving | `medium` | 顾问模式 |
-| `designer` | doubao-seed-evolving | `medium` | UI/UX 设计任务 |
-| `task` | glm-5-3-flash | `auto` | 任务子代理（委派多步任务） |
-| `commit` | doubao-seed-2.0-mini | `off` | 生成 commit message |
-| `vision` | doubao-seed-evolving | `auto` | 视觉/截图理解（方舟多模态） |
-| `Zhipu` | zhipu/glm-5.3-flash | `high` | 智谱 GLM（自有余额付费，备用） |
-| `DeepSeek` | deepseek/deepseek-flash | `auto` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用，不在 `cycleOrder` 中。旧模型名 `deepseek-v4-flash` 等仍可调用，由 V4.1-Flash 服务并按 Flash 计价） |
-| `agent-plan` | glm-5-3-flash | `auto` | 火山方舟 Agent Plan 通道（订阅制，1M 上下文，多模态；agent-plan 节点与 coding plan 各有一条 GLM 5.3 Flash，可在 `/models` 里区分选择） |
+| `default` | commandcode/deepseek/deepseek-v4.1-flash | — | 默认主模型，日常编码 |
+| `plan` | commandcode/claude-sonnet-5-5 | `auto` | 任务规划阶段 |
+| `slow` | commandcode/claude-sonnet-5-5 | `auto` | 深度推理 / 复杂问题 |
+| `smol` | commandcode/gpt-6-luna | `auto` | 轻量快速任务 |
+| `tiny` | commandcode/inclusionai/ling-3.1-flash:free | `auto` | 轻量后台任务（会话标题 / 记忆抽取） |
+| `commit` | commandcode/inclusionai/ling-3.1-flash:free | `auto` | 生成 commit message |
+| `task` | commandcode/inclusionai/ling-3.1-flash:free | `auto` | 任务子代理（委派多步任务） |
+| `advisor` | commandcode/z-ai/glm-5.3-flash | `high` | 顾问模式 |
+| `vision` | commandcode/z-ai/glm-5.3-flash | `high` | 视觉 / 图片理解（见「视觉能力配置」） |
+| `DeepSeek` | deepseek/deepseek-flash | `auto` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用，不在 `cycleOrder` 中） |
+| `agent-plan` | agent-plan/deepseek-v4.1-flash | `high` | 火山方舟 Agent Plan 通道（订阅制，1M 上下文） |
 
-**思考档位循环 (`cycleOrder`)**: `smol` → `default` → `slow` → `agent-plan`，逐级升档。
+**思考档位循环 (`cycleOrder`)**: `default` → `smol` → `slow` → `tiny`。
+
+### 视觉能力配置 (`models.yml` → `commandcode.modelOverrides`)
+
+`commandcode` 是 omp **内置 provider**。omp 内置目录把它的**全部 85 个模型都声明为 `input: [text]`**（`omp models commandcode` 显示 `images=no`），于是 `vision` 角色解析失败、图片在发送前被摘除。
+
+实测（直连 `api.commandcode.ai`，用带随机 token / 随机图形数量的探针图判定，能读出才算支持）确认 **36 个模型支持图片输入**，其声明已在 `models.yml` 覆盖：
+
+```yaml
+providers:
+  commandcode:
+    modelOverrides:
+      "z-ai/glm-5.3-flash":        # openai-completions 线
+        input: [text, image]
+        compat:
+          stripImageInput: false   # 必须同时写，否则能力判定仍为 false
+      "claude-sonnet-5-5":         # anthropic-messages 线
+        input: [text, image]       # anthropic 线只需 input
+```
+
+要点：
+
+- **两条协议线 URL 不同，但配置层无需区分**——omp 按每个模型自身的 `api` 字段选协议：`openai-completions` → `/v1/chat/completions` + `image_url` 内容块；`anthropic-messages` → `/v1/messages` + base64 image source。
+- **openai 线的能力判定是 `input 含 image` **且** `compat.stripImageInput == false`**，所以 35 个 openai 线模型两项都写；唯一的 anthropic 线模型（`claude-sonnet-5-5`）只写 `input`。
+- **回退链**：omp 视觉模型解析顺序为 `@vision → @default → 当前激活 → 第一个具备视觉的可用模型`。`vision` 角色指向 `commandcode/z-ai/glm-5.3-flash`，声明正确后 `@vision` 直接命中；文本主模型收到图片时（`images.describeForTextModels: true`）会委托该角色描述，或由模型自行 `read ?q=` 兜底。
+- **未声明的模型**（订阅不含、或实测明确拒绝图片的）：保持 text-only；遇到图片会自动回退到 `glm-5.3-flash`。
+- 覆盖清单 36 个：`MiniMaxAI/MiniMax-M3`、`Qwen/Qwen3.6-Plus`、`Qwen3.7-Flash/Plus`、`Qwen3.8-27B/Flash/Max/Max-0902/Omni-Flash`、`claude-sonnet-5-5`、`deepseek/deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4.1-flash(-fast)`、`google/gemini-3.7-flash`、`gemini-3.8-flash`、`gpt-5.6-luna/sol`、`gpt-6-luna`、`mistral/mistral-large-4`、`moonshotai/Kimi-K2.5/K2.6/K2.7-Code(-Highspeed)/K3`、`stepfun/Step-3.5-Flash`、`Step-5-Preview`、`xai/grok-4.5/4.6/4.7`、`xiaomi/mimo-v2.5`、`mimo-v2.6-flash/pro/pro-ultraspeed`、`z-ai/glm-5.3-flash(x)`。
 
 ### 长期记忆 (`config.yml` → `memory` / `mnemopi`)
 
@@ -150,12 +176,9 @@ mnemopi:
 
 ### 模型提供商 (`models.yml`)
 
-内置火山引擎大模型 API（方舟，coding plan 订阅制）：
-- **glm-5-3-flash** — 默认模型（1M 上下文）
-- **glm-5.3** — 规划 / 慢速深度推理（1M 上下文）
-- **deepseek-v4-1-flash-260910** — 方舟 DeepSeek V4.1 Flash（1M 上下文；升级自 `deepseek-v4-flash-ga-260731`，当前方舟 coding plan 尚未接入该模型，配置已切换、请求待开通后生效；`smol` 角色已改走官方 `deepseek/deepseek-flash`，此模型保留作方舟通道备选）
-- **doubao-seed-2.0-mini** — 轻量 / commit / mnemopi 记忆抽取（`tiny`/`commit` 角色）
-- **doubao-seed-evolving** — 顾问 / 设计 / 视觉（`advisor`、`designer`、`vision` 角色）（1M 上下文，多模态）
+火山引擎（方舟，coding plan 订阅制）——**当前已停用**：
+- `volcengine-coding` provider 在 `models.yml` 中**整块注释保留**（订阅到期/未续费，实测报 `does not have a valid CodingPlan subscription`）；对应角色已改走其他 provider
+- 保留块内的模型定义（glm-5.3 / glm-5-3-flash / doubao-seed-2.0-mini / doubao-seed-evolving / deepseek-v4-1-flash-260910）供日后恢复订阅时启用
 
 火山方舟 Agent Plan（`agent-plan` provider，订阅制，OpenAI 兼容）：
 - **deepseek-v4.1-flash** — Agent Plan 通道 DeepSeek V4.1 Flash（1M 上下文，多模态文本+图像，393K 输出，`reasoning`；实测 TTFT ~1.4-1.9s、~155-180 tok/s，小输入正常，大输入警惕 TTFT 挂起）
@@ -169,6 +192,12 @@ mnemopi:
 - **glm-5.3-flash** — `Zhipu` 角色备用；多模态（文本+图像），1M 上下文，131K 输出上限，`reasoning`（思考档位 `low/high/max`，默认 `max`）
 - `baseUrl: https://open.bigmodel.cn/api/paas/v4`，请求自动落到 `/chat/completions`；`open.bigmodel.cn` 主机会被自动识别为智谱，走 `zai` thinking 方言（`thinking.type: enabled` + `reasoning_effort`，工具调用时自动开启 `tool_stream`）
 - 价格（元/百万 tokens）：输入 **0.8**、输出 **2.8**、缓存命中 **0.23**、缓存写入 **0.8**。`models.yml` `cost` 块**直接写人民币价**（本分支状态栏不显示 cost，此价格供 API 记账/其他工具使用）。
+
+Command Code（`commandcode` provider，omp **内置**，订阅制网关）：
+- 默认主通道：`default` / `plan` / `slow` / `smol` / `tiny` / `commit` / `vision` 角色均指向此 provider 的模型
+- **无需 `apiKey`/`baseUrl`**：由 omp 内置定义，登录凭证存于 omp 凭据库（`agent.db`）
+- `models.yml` 只用 `modelOverrides` 覆盖两个模型：`inclusionai/ling-3.1-flash:free`（上下文/输出上限）与 36 个支持视觉的模型的 `input` 能力（见「视觉能力配置」）
+- 计费与额度由订阅计划决定；`MODEL_NOT_IN_PLAN`（403）表示当前订阅未包含该模型
 
 > **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `smol` 与 `DeepSeek` 角色指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，`models.yml` 中仅需一个 `deepseek:` 块写 `modelOverrides` 覆盖内置美元价为本项目的人民币价（见 `agent/models.yml`）。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。`deepseek-flash` 由官方 `/v1/models` 动态发现，价格靠 `modelOverrides` 固定，官方降价时改 `models.yml` 即可。
 
@@ -206,7 +235,7 @@ providers:
 - **多模态**：厂商支持图像就把 `input` 写 `[text, image]`，omp 会自动按 `image_url` 内容块发送。
 - **计价说明**：模型未写 `cost` 视为免费；写了 `cost` 按元/百万 tokens 记账。本分支状态栏无 cost 段，`cost` 块只作记账真源（`cny-patch-tiers` 分支会把它显示成 ¥）。
 - **验证**：`omp models ls` 应能看到新 provider 与模型；若有 `models.yml validation failed` 报错，说明字段名或取值不合法（对照上面模板检查）。
-- **占位符约定**：仓库中 `apiKey` 一律用 `<XXX_API_KEY>` 占位脱敏；**setup 不再交互填 key**——部署时按 provider 保留本地已填的真实 key，未填项在结尾列出并提示手动编辑 `~/.omp/agent/models.yml`。已知 provider（火山/智谱）可选设环境变量（`OMP_API_KEY`/`ZHIPU_API_KEY`）自动注入；新增 provider 若要环境变量注入，需在 `setup.ps1` 的 `$envVarByProvider` 登记其环境变量名。
+- **占位符约定**：仓库中 `apiKey` 一律用 `<XXX_API_KEY>` 占位脱敏；**setup 不再交互填 key**——部署时按 provider 保留本地已填的真实 key，未填项在结尾列出并提示手动编辑 `~/.omp/agent/models.yml`。已知 provider（Agent Plan/智谱）可选设环境变量（`OMP_AGENT_PLAN_KEY`/`ZHIPU_API_KEY`）自动注入；新增 provider 若要环境变量注入，需在 `setup.ps1` 的 `$envVarByProvider` 登记其环境变量名。
 
 > **内置 provider 覆盖**：omp 内置 provider（`deepseek`、`anthropic`、`openai` 等）不写 `baseUrl`/`models` 也能在 `providers:` 下建块，只写 `modelOverrides` 即可覆盖内置模型的任意字段（`cost`/`contextWindow` 等）——`cost` 未覆盖的字段逐项回退内置价。
 
@@ -239,23 +268,22 @@ bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
 | 部分厂商思考增量在 `delta.reasoning`（非 `reasoning_content`） | 增量检测同时认三个字段，否则 TTFT 会虚高成"思考结束后首个正文 token" |
 | 智谱 **GLM-5.3 起强制思考**，`thinking: {type: disabled}` 直接报错 | 改用 `reasoning_effort: low` 降档；更早的 GLM 仍用 `thinking.disabled` |
 
-**实测参考**（一轮全量，仅供横向比较；TTFT 受网络与厂商排队影响波动较大）：
+**实测参考**（历史一轮全量，仅供横向比较；TTFT 受网络与厂商排队影响波动较大）：
 
 | provider | model | TTFT(ms) | tok/s |
 |----------|-------|---------:|------:|
-| volcengine-coding | glm-5.3 | 5191 | 33.8 |
-| volcengine-coding | glm-5-3-flash | 4940 | 23.1 |
-| volcengine-coding | doubao-seed-2.0-mini | 521 | 91.7 |
-| volcengine-coding | doubao-seed-evolving | 857 | 30.0 |
-| volcengine-coding | deepseek-v4-1-flash-260910 | 444 ² | 85.9 ² |
+| volcengine-coding ³ | glm-5.3 | 5191 | 33.8 |
+| volcengine-coding ³ | glm-5-3-flash | 4940 | 23.1 |
+| volcengine-coding ³ | doubao-seed-2.0-mini | 521 | 91.7 |
+| volcengine-coding ³ | doubao-seed-evolving | 857 | 30.0 |
+| volcengine-coding ³ | deepseek-v4-1-flash-260910 | 444 ² | 85.9 ² |
 | agent-plan | deepseek-v4.1-flash | 1381 | 177.5 |
 | agent-plan | glm-5-3-flash | 1185 | 71.2 |
 | zhipu | glm-5.3-flash | 750 | 30.0 |
 
 ¹ 单 chunk 一次性返回，tok/s 为下界；真实瓶颈是 TTFT。
 ² 方舟 v4.1 模型暂未接入 coding plan（实测 `UnsupportedModel`），该行沿用 v4 旧版实测值（TTFT ~444ms、~86 tok/s），待开通后重测更新。agent-plan 两行为 2026-09-18 实测（小输入；大输入警惕该端点 TTFT 挂起）。
-
-选型提示：**火山 doubao-seed-2.0-mini / deepseek-v4-flash** 首 token 快且吐字最快，适合 `smol`/`commit`/`task` 等高频轻任务。
+³ `volcengine-coding` 订阅已停用（见「模型提供商」），保留为历史参考；当前主通道为 `commandcode`。
 
 > 本分支（master）为**纯净配置**：不部署任何 bundle 补丁，状态栏不显示 cost（见「状态栏」一节）。需要人民币 cost 显示时，切到 `cny-patch-tiers` 分支部署（含 `scripts/omp-cny-patch.mjs` 三态补丁：coding plan / free / ¥）。
 
