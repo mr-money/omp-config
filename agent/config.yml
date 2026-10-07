@@ -1,18 +1,40 @@
 providers:
   webSearchOrder:
-    []
+    - tavily
+    - perplexity
+    - gemini
+    - anthropic
+    - codex
+    - xai
+    - zai
+    - exa
+    - tinyfish
+    - jina
+    - kagi
+    - firecrawl
+    - brave
+    - kimi
+    - parallel
+    - synthetic
+    - searxng
+    - startpage
+    - duckduckgo
+    - ecosia
+    - google
+    - mojeek
+    - public
 modelRoles:
-  plan: volcengine-coding/glm-5.3:high
-  slow: volcengine-coding/glm-5.3:high
+  plan: commandcode/gpt-6.1-sol:auto
+  slow: commandcode/claude-sonnet-5-5:auto
   advisor: volcengine-coding/doubao-seed-evolving:medium
-  commit: volcengine-coding/doubao-seed-2.0-mini:off
-  smol: volcengine-coding/deepseek-v4-1-flash-260910:auto
-  default: volcengine-coding/glm-5-3-flash
-  tiny: volcengine-coding/doubao-seed-2.0-mini:off
-  vision: volcengine-coding/glm-5-3-flash:auto
+  commit: commandcode/inclusionai/ling-3.1-flash:free:auto
+  smol: commandcode/gpt-6.1-sol:auto
+  default: commandcode/gpt-6-luna
+  tiny: commandcode/inclusionai/ling-3.1-flash:free:auto
+  vision: commandcode/z-ai/glm-5.3-flash:high
   DeepSeek: deepseek/deepseek-flash:auto
   task: volcengine-coding/glm-5-3-flash:auto
-  agent-plan: agent-plan/glm-5-3-flash:auto
+  agent-plan: agent-plan/deepseek-v4.1-flash:high
 defaultThinkingLevel: auto
 memory:
   backend: mnemopi
@@ -59,3 +81,6 @@ dev:
   autoqaConsent: granted
 theme:
   dark: titanium
+extendedContext: true
+images:
+  describeForTextModels: true
