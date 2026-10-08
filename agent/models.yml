@@ -204,6 +204,7 @@ providers:
         compat:
           stripImageInput: false
       "gpt-6-luna":
+        contextWindow: 1126400
         input: [text, image]
         compat:
           stripImageInput: false
