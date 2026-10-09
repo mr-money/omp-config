@@ -1,40 +1,16 @@
-providers:
-  webSearchOrder:
-    - tavily
-    - perplexity
-    - gemini
-    - anthropic
-    - codex
-    - xai
-    - zai
-    - exa
-    - tinyfish
-    - jina
-    - kagi
-    - firecrawl
-    - brave
-    - kimi
-    - parallel
-    - synthetic
-    - searxng
-    - startpage
-    - duckduckgo
-    - ecosia
-    - google
-    - mojeek
-    - public
 modelRoles:
   plan: commandcode/claude-sonnet-5-5:auto
-  slow: commandcode/claude-sonnet-5-5:auto
+  slow: commandcode/claude-sonnet-5-5:medium
   advisor: commandcode/z-ai/glm-5.3-flash:high
   commit: commandcode/inclusionai/ling-3.1-flash:free:auto
-  smol: commandcode/gpt-6-luna:auto
-  default: commandcode/deepseek/deepseek-v4.1-flash
-  tiny: commandcode/inclusionai/ling-3.1-flash:free:auto
+  smol: commandcode/xiaomi/mimo-v2.6-pro
+  default: commandcode/deepseek/deepseek-v4.1-flash:high
+  tiny: commandcode/inclusionai/ling-3.1-flash:free
   vision: commandcode/z-ai/glm-5.3-flash:high
   DeepSeek: deepseek/deepseek-flash:auto
   task: commandcode/inclusionai/ling-3.1-flash:free:auto
   agent-plan: agent-plan/deepseek-v4.1-flash:high
+  web: web/tavily
 defaultThinkingLevel: auto
 memory:
   backend: mnemopi
@@ -84,3 +60,34 @@ theme:
 extendedContext: false
 images:
   describeForTextModels: true
+retry:
+  fallbackChains:
+    web:
+      - web/perplexity
+      - google-gemini-cli/gemini-2.5-flash
+      - google-antigravity/gemini-2.5-flash
+      - google/gemini-2.5-flash
+      - anthropic/claude-haiku-4-5
+      - openai-codex/gpt-5.6-luna
+      - xai/grok-4.5
+      - web/zai
+      - web/exa
+      - web/tinyfish
+      - web/jina
+      - web/kagi
+      - web/firecrawl
+      - web/brave
+      - web/kimi
+      - web/parallel
+      - web/synthetic
+      - web/searxng
+      - web/startpage
+      - web/duckduckgo
+      - web/ecosia
+      - web/google
+      - web/mojeek
+      - web/public
+      - web/hosted
+commands:
+  enableClaudeUser: true
+  enableOpencodeProject: true
