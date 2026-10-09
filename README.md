@@ -84,6 +84,8 @@ cd omp-config
 | `~/.omp/agent/config.yml` | `statusLine` | 直接复制 | 自定义状态栏：custom 段列表（无 cost 段）、git 只显分支名、path 缩写、模型名带思考档位 |
 | `~/.omp/agent/settings.json` | — | 直接复制 | 不再单独设 shellPath，统一走 config.yml |
 | `~/.omp/agent/config.yml` | `extendedContext` | 直接复制 | 当前为 `false`；`cycleOrder` 为 `default → smol → slow → tiny` |
+| `~/.omp/agent/config.yml` | `retry.fallbackChains` | 直接复制 | 联网搜索失败回退链，25 项按序（见「联网搜索」） |
+| `~/.omp/agent/config.yml` | `commands` | 直接复制 | 命令来源开关：`enableClaudeUser`（`~/.claude/commands/`）、`enableOpencodeProject`（`.opencode/commands/`） |
 
 ### 验证
 
@@ -119,19 +121,34 @@ statusLine:
 
 | 角色 | 模型 | 思考档位 | 用途 |
 |------|------|----------|------|
-| `default` | commandcode/deepseek/deepseek-v4.1-flash | — | 默认主模型，日常编码 |
+| `default` | commandcode/deepseek/deepseek-v4.1-flash | `high` | 默认主模型，日常编码 |
 | `plan` | commandcode/claude-sonnet-5-5 | `auto` | 任务规划阶段 |
-| `slow` | commandcode/claude-sonnet-5-5 | `auto` | 深度推理 / 复杂问题 |
-| `smol` | commandcode/gpt-6-luna | `auto` | 轻量快速任务 |
-| `tiny` | commandcode/inclusionai/ling-3.1-flash:free | `auto` | 轻量后台任务（会话标题 / 记忆抽取） |
+| `slow` | commandcode/claude-sonnet-5-5 | `medium` | 深度推理 / 复杂问题 |
+| `smol` | commandcode/xiaomi/mimo-v2.6-pro | — | 轻量快速任务 |
+| `tiny` | commandcode/inclusionai/ling-3.1-flash:free | — | 轻量后台任务（会话标题 / 记忆抽取） |
 | `commit` | commandcode/inclusionai/ling-3.1-flash:free | `auto` | 生成 commit message |
 | `task` | commandcode/inclusionai/ling-3.1-flash:free | `auto` | 任务子代理（委派多步任务） |
 | `advisor` | commandcode/z-ai/glm-5.3-flash | `high` | 顾问模式 |
 | `vision` | commandcode/z-ai/glm-5.3-flash | `high` | 视觉 / 图片理解（见「视觉能力配置」） |
+| `web` | web/tavily | — | 联网搜索主通道（失败回退链见「联网搜索」） |
 | `DeepSeek` | deepseek/deepseek-flash | `auto` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用，不在 `cycleOrder` 中） |
 | `agent-plan` | agent-plan/deepseek-v4.1-flash | `high` | 火山方舟 Agent Plan 通道（订阅制，1M 上下文） |
 
 **思考档位循环 (`cycleOrder`)**: `default` → `smol` → `slow` → `tiny`。
+
+### 联网搜索 (`config.yml` → `modelRoles.web` + `retry.fallbackChains.web`)
+
+- **主通道**：`web` 角色 = `web/tavily`。
+- **失败回退链**（`retry.fallbackChains.web`，按序）：`web/perplexity` → `google-gemini-cli/gemini-2.5-flash` → `google-antigravity/gemini-2.5-flash` → `google/gemini-2.5-flash` → `anthropic/claude-haiku-4-5` → `openai-codex/gpt-5.6-luna` → `xai/grok-4.5` → `web/zai` → `web/exa` → `web/tinyfish` → `web/jina` → `web/kagi` → `web/firecrawl` → `web/brave` → `web/kimi` → `web/parallel` → `web/synthetic` → `web/searxng` → `web/startpage` → `web/duckduckgo` → `web/ecosia` → `web/google` → `web/mojeek` → `web/public` → `web/hosted`。
+- 排序意图：先走托管搜索/通用模型（perplexity、gemini、haiku、grok），再走需要 key 或自建/公共实例的 `web/*` 提供方，最后兜底 `web/hosted`。
+- 旧写法 `providers.webSearchOrder` 已被这套取代（omp bundle 里它只是 `providers.webSearch` 的遗留别名），本配置不再保留该键。
+
+### 命令来源 (`config.yml` → `commands`)
+
+| 键 | 值 | 含义（omp 内部标签） |
+|----|----|----------------------|
+| `enableClaudeUser` | `true` | Claude User Commands —— 从 `~/.claude/commands/` 读取命令（omp 默认 `false`，此处显式打开） |
+| `enableOpencodeProject` | `true` | OpenCode Project Commands —— 从 `.opencode/commands/` 读取命令（omp 默认即 `true`） |
 
 ### 视觉能力配置 (`models.yml` → `commandcode.modelOverrides`)
 
