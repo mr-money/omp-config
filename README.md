@@ -22,15 +22,17 @@ flowchart LR
 
 - **拉方向**（部署）：`git pull` → `setup.ps1`。覆盖式部署，密钥按 provider 保留本地已填值。
 - **推方向**（提升）：`sync-from-live.ps1`。把运行层的配置改动提升回仓库并 push，`shellPath`/`setupVersion` 自动剥离，真实 apiKey 永不入仓（详见文末「反向同步」）。
-- **分工**：`models.yml` 模型定义与计价、`skills/`、`lsp.json` 以仓库为源（推方向不回写）；`config.yml`、`settings.json` 等其余配置双向流动。
+- **分工**：`models.yml` 模型定义与计价、`skills/`、`lsp.json`、`mcp.json`、`agents/` 以仓库为源（推方向不回写）；`config.yml`、`settings.json` 等其余配置双向流动。
 
 ## 目录结构
 
 ```
 omp-config/
 ├── agent/                    # → ~/.omp/agent/
+│   ├── agents/               # → ~/.omp/agent/agents/ 子代理定义（含 codebase-memory 三档）
 │   ├── config.yml            # 全局配置（modelRoles, memory/mnemopi, TUI；shellPath 由 setup 探测）
 │   ├── lsp.json              # LSP 服务器（默认 PATH 裸名，setup 探测覆盖）
+│   ├── mcp.json              # MCP 服务器（默认 PATH 裸名，setup 探测覆盖）
 │   ├── models.yml            # 模型提供商 + 人民币计价；apiKey 仓库留占位符，本地手动填（setup 不再交互）
 │   └── settings.json         # 持久化设置
 ├── scripts/
@@ -64,11 +66,11 @@ cd omp-config
 脚本流程（自动执行，无需手动抄步骤）：
 1. 校验 bun / omp 已安装
 2. 升级 omp 到推荐版本（`$RecommendedOmpVersion`，非匹配即重装）、复制 `agent/` → `~/.omp/agent/`、`skills/` → `~/.omp/agent/skills/`
-3. 探测本机 pwsh / gopls / python 路径，写回对应配置
+3. 探测本机 pwsh / gopls / python / codebase-memory-mcp 路径，写回对应配置
 4. 注入 API Key：**不再交互输入**——仅从环境变量（`OMP_AGENT_PLAN_KEY`/`ZHIPU_API_KEY`）读取，设了就写入对应 provider；未设置则保留 `<...>` 占位符。重部署时**按 provider 保留本地已填的真实 key**（通用扫描全部 provider，非硬编码），结尾列出仍为占位符的 provider 与文件路径，提示手动编辑
 5. 完成（本分支不部署任何 bundle 补丁，omp 保持原样）
 
-只读健康检查：`.\doctor.ps1`。它检查 Bun、OMP/bundle 版本、三个配置文件存在性及 gopls/python 是否可用，不会自动修复。注意它只查部署健康，不查 live 与仓库之间的内容漂移——漂移用 `.\sync-from-live.ps1` 的预检查看（无差异时会明确输出"无需同步"）。
+只读健康检查：`.\doctor.ps1`。它检查 Bun、OMP/bundle 版本、四个配置文件（`config.yml` / `models.yml` / `lsp.json` / `mcp.json`）存在性及 gopls/python/codebase-memory-mcp 是否可用（工具按 PATH 判定），不会自动修复。注意它只查部署健康，不查 live 与仓库之间的内容漂移——漂移用 `.\sync-from-live.ps1` 的预检查看（无差异时会明确输出"无需同步"）。
 
 ### 配置项一览
 
@@ -76,6 +78,8 @@ cd omp-config
 |------|------|----------|------|
 | `~/.omp/agent/models.yml` | `apiKey` | 环境变量注入 / 本地手动编辑 | 各 provider 的 key：Agent Plan `OMP_AGENT_PLAN_KEY`、智谱 `ZHIPU_API_KEY`。setup **不再交互**——设了环境变量就自动写入，没设则保留 `<...>` 占位符；重部署按 provider 保留本地已填真实 key，结尾列出未填项 |
 | `~/.omp/agent/lsp.json` | `servers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`gopls` / `python -m pylsp`）；探测到绝对路径则写回 |
+| `~/.omp/agent/mcp.json` | `mcpServers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`codebase-memory-mcp`）；探测到绝对路径则写回。二进制需每台机器单独装，见「代码知识图谱 MCP」一节 |
+| `~/.omp/agent/agents/` | — | 直接复制 | 子代理定义（`codebase-memory` 三档）；omp 通过 `task` 的 `agent` 字段调用 |
 | `~/.omp/agent/config.yml` | `shellPath` | setup 探测写入 | 检测到 pwsh 则自动写入；未检测到则省略（omp 回退到 cmd.exe） |
 | `~/.omp/agent/config.yml` | `statusLine` | 直接复制 | 自定义状态栏：custom 段列表（无 cost 段）、git 只显分支名、path 缩写、模型名带思考档位 |
 | `~/.omp/agent/settings.json` | — | 直接复制 | 不再单独设 shellPath，统一走 config.yml |
@@ -173,6 +177,40 @@ mnemopi:
 - **`llmMode: smol`**：事实抽取/整理走 `tiny`→`smol` 角色（doubao-seed-2.0-mini），免费额度内。
 - **consolidation 需手动触发**：正常退出只做轻量 drain，working → episodic 晋级与图谱构建仅在 `/memory enqueue` 时发生（且只整理 >12h 的行）；重要会话结束前跑一次。
 - **进阶开关保持关闭**：`polyphonicRecall` 的 graph voice 依赖 consolidation 产生的 `gists`/`graph_edges`（未触发时恒为空）；`proactiveLinking` 的实体抽取为英文偏置正则，中文收益微弱。
+
+### 代码知识图谱 MCP（`codebase-memory-mcp`）
+
+[DeusData/codebase-memory-mcp](https://github.com/DeusData/codebase-memory-mcp)：把代码库索引成常驻知识图谱的 MCP 服务器（单文件静态二进制、零依赖，17 个工具：`search_graph` / `trace_path` / `get_code_snippet` / `get_architecture` / `query_graph` / `index_repository` / `check_index_coverage` 等）。本仓库同步它的 omp 侧三件套：
+
+| 仓库路径 | 部署到 | 作用 |
+|----------|--------|------|
+| `agent/mcp.json` | `~/.omp/agent/mcp.json` | MCP 服务器声明（仓库存 PATH 裸名，setup 探测后写绝对路径） |
+| `agent/agents/codebase-memory*.md` | `~/.omp/agent/agents/` | 三档子代理：`codebase-memory`（图验证）/ `codebase-memory-scout`（快速只读侧信道）/ `codebase-memory-auditor`（覆盖度审计），各带工具白名单与证据纪律 |
+| `skills/codebase-memory/SKILL.md` | `~/.omp/agent/skills/codebase-memory/` | 触发词与工具用法矩阵（explore the codebase / who calls X / impact analysis / dead code …） |
+
+**二进制与索引库不在仓库内**——每台机器各自安装、版本独立：
+
+```powershell
+# 装/升级（官方脚本，幂等）。--skip-config = 只装二进制 + 写 PATH，不碰任何 agent 配置
+$d = "$env:TEMP\cbm-setup"; New-Item -ItemType Directory -Force $d | Out-Null
+irm https://raw.githubusercontent.com/DeusData/codebase-memory-mcp/main/install.ps1 -OutFile "$d\install.ps1"
+pwsh -File "$d\install.ps1" --skip-config
+```
+
+装完重启 omp 会话生效——MCP 服务器在**会话启动时**连接（实测新会话启动 2 秒内拉起进程），不是等你第一次查代码。索引库落在 `~/.cache/codebase-memory-mcp/`；共享 daemon 由首个会话拉起，最后一个客户端断开后退出。
+
+`mcp.json` 里的裸名 `codebase-memory-mcp` 依赖安装器写入 PATH（只有新起的进程才看得到），setup 探测到可执行文件后会直接写成绝对路径，避免 PATH 未刷新的会话连不上。
+
+**用法要点**（本机实测）：
+
+- omp **不会**自动把 `grep`/`read` 换成图查询。它只做三件事：把服务器 `instructions` 注入系统提示（"Graph first: search_graph for symbols…"）、按触发词暴露 skill、提供三个带工具白名单的子代理。要必用就在提示里点名（"用 codebase-memory 查谁调用了 X"）或直接委派子代理。
+- 查询必须给**精确项目名**（`project` 参数），默认取仓库目录名；名字不对返回空结果而不是报错。
+- `auto_watch` / `watcher_enabled` 默认 `true`：已索引过的 git 仓库由 daemon 后台跟踪变更，无需手动重建索引（`.git`、`.gitignore` 内容不入图）。
+- `auto_index` 默认 `false`：新仓库首次连接**不会**自动索引。想全自动：`codebase-memory-mcp config set auto_index true`；否则每个新仓库首次手动 `index_repository`。
+- 非 git 目录默认不 watch，需要 `config set watch_non_git true`。
+- 自带图 UI：`codebase-memory-mcp --ui=true --port=9749` → `http://127.0.0.1:9749`（默认已开，由 daemon 托管）。
+- 卸载：`codebase-memory-mcp uninstall -y --delete-indexes`（连索引一起删）；omp 侧删掉 `mcp.json` 里的条目、`agent/agents/codebase-memory*.md`、`skills/codebase-memory/`。
+- CBM 自带的 `install --clients=omp -y` 会重写 `~/.omp/agent/mcp.json`（写成它解析出的绝对路径），与本仓库 setup 探测的产物等价，两者可混用。
 
 ### 模型提供商 (`models.yml`)
 

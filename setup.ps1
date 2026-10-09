@@ -187,7 +187,38 @@ if (Test-Path $lspJson) {
     }
 }
 
-# 6. API Key：环境变量自动注入（OMP_API_KEY / ZHIPU_API_KEY），
+# 6. 探测 codebase-memory-mcp 可执行文件，把 mcp.json 的 command 从仓库裸名写成绝对路径
+Write-Step "探测 codebase-memory-mcp"
+$mcpJson = Join-Path $AgentDir "mcp.json"
+if (Test-Path $mcpJson) {
+    $raw = [System.IO.File]::ReadAllText($mcpJson)
+    $cbmCmd = Get-Command codebase-memory-mcp -ErrorAction SilentlyContinue
+    $cbmExe = $null
+    if ($cbmCmd -and $cbmCmd.Source) { $cbmExe = $cbmCmd.Source }
+    if (-not $cbmExe) {
+        # 安装器默认落点；PATH 未刷新的会话里 Get-Command 找不到
+        foreach ($cand in @(
+            (Join-Path $env:LOCALAPPDATA "Programs\codebase-memory-mcp\codebase-memory-mcp.exe"),
+            (Join-Path $env:USERPROFILE ".local\bin\codebase-memory-mcp.exe"))) {
+            if (Test-Path $cand) { $cbmExe = $cand; break }
+        }
+    }
+    if ($cbmExe) {
+        # JSON 字符串转义 \ -> \\；MatchEvaluator 插入字面值防 $ 回引用
+        $jp = $cbmExe.Replace('\', '\\')
+        if ($raw -match '"command":\s*"codebase-memory-mcp"') {
+            $raw = [regex]::Replace($raw, '("command":\s*)"codebase-memory-mcp"', { param($m) "$($m.Groups[1].Value)`"$jp`"" })
+            Write-Utf8Text $mcpJson $raw
+            Write-OK "mcp.json command -> $cbmExe"
+        } else {
+            Write-OK "mcp.json command 已指向具体路径，保留"
+        }
+    } else {
+        Write-Warn "未检测到 codebase-memory-mcp，mcp.json 保留裸名（该 MCP 服务器将不可用，见 README 对应章节装二进制）"
+    }
+}
+
+# 7. API Key：环境变量自动注入（OMP_API_KEY / ZHIPU_API_KEY），
 #    不再交互输入。没填的保留占位符，结尾摘要会提示手动编辑。
 Write-Step "配置 API Key（环境变量注入，无交互）"
 $modelsYml = Join-Path $AgentDir "models.yml"

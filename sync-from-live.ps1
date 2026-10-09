@@ -5,7 +5,7 @@
 #   config.yml     剥离机器本地项（shellPath / setupVersion）后入库
 #   settings.json   直接覆盖入库
 #   models.yml     不覆盖模型定义；仅把仓库占位符反视为"忽略"，live 中已填的真实 key 一律丢弃（不入仓）
-#   lsp.json / skills/          跳过（仓库为源，部署方向才探测覆盖）
+#   lsp.json / skills/ / agents/ / mcp.json   跳过（仓库为源，部署方向才探测覆盖）
 #
 # 流程：预检漂移摘要 → 确认 → 复制 → models.yml 占位符校验 → git add/commit/push（-NoPush 跳过）
 param(
