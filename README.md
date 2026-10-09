@@ -47,7 +47,7 @@ omp-config/
 
 > **PowerShell**：`setup.ps1` 同时支持 Windows PowerShell 5.1 与 PowerShell 7+（脚本已带 UTF-8 BOM，中文注释/输出在两种环境下均解析正常；终端若显示中文乱码仅影响显示，不影响执行）。
 
-- `setup.ps1` 会自动安装/升级 bun 全局包到推荐的 **OMP 18.1.20**（版本不同即重装）。支持自定义 `BUN_INSTALL`（`setup.ps1` / `doctor.ps1` 同一约定）。
+- `setup.ps1` 会自动安装/升级 bun 全局包到推荐的 **OMP 18.8.3**（版本不同即重装）。支持自定义 `BUN_INSTALL`（`setup.ps1` / `doctor.ps1` 同一约定）。
 - 已安装 `bun`
 - 已安装语言服务器（gopls、pylsp 等）
 

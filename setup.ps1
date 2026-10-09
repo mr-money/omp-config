@@ -9,7 +9,7 @@ $AgentDir = Join-Path $OmpHome "agent"
 $bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $env:USERPROFILE ".bun" }
 $OmpPkgDir = Join-Path $bunInstall "install\global\node_modules\@oh-my-pi\pi-coding-agent"
 $OmpPkgBundle = Join-Path $OmpPkgDir "dist\cli.js"
-$RecommendedOmpVersion = "18.1.20"
+$RecommendedOmpVersion = "18.8.3"
 
 function Write-Step { param($msg) Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-OK   { param($msg) Write-Host "    OK  $msg" -ForegroundColor Green }
