@@ -231,14 +231,10 @@ pwsh -File "$d\install.ps1" --skip-config
 
 ### 模型提供商 (`models.yml`)
 
-火山引擎（方舟，coding plan 订阅制）——**当前已停用**：
-- `volcengine-coding` provider 在 `models.yml` 中**整块注释保留**（订阅到期/未续费，实测报 `does not have a valid CodingPlan subscription`）；对应角色已改走其他 provider
-- 保留块内的模型定义（glm-5.3 / glm-5-3-flash / doubao-seed-2.0-mini / doubao-seed-evolving / deepseek-v4-1-flash-260910）供日后恢复订阅时启用
-
 火山方舟 Agent Plan（`agent-plan` provider，订阅制，OpenAI 兼容）：
 - **deepseek-v4.1-flash** — Agent Plan 通道 DeepSeek V4.1 Flash（1M 上下文，多模态文本+图像，393K 输出，`reasoning`；实测 TTFT ~1.4-1.9s、~155-180 tok/s，小输入正常，大输入警惕 TTFT 挂起）
-- **glm-5-3-flash** — Agent Plan 通道 GLM 5.3 Flash（多模态文本+图像，1M 上下文；实测 TTFT ~1.2s、~71 tok/s，与 coding plan 同名模型互为备用）
-- 与 coding plan 共用方舟 API Key，`baseUrl: https://ark.cn-beijing.volces.com/api/plan/v3`；仓库中占位脱敏，部署后本地填入
+- **glm-5-3-flash** — Agent Plan 通道 GLM 5.3 Flash（多模态文本+图像，1M 上下文；实测 TTFT ~1.2s、~71 tok/s）
+- `baseUrl: https://ark.cn-beijing.volces.com/api/plan/v3`；仓库中占位脱敏，部署后本地填入
 - ⚠️ 实测该端点对 deepseek 存在**服务端间歇性 TTFT 挂起**（约 50% 概率 >60s 零字节，输入 ≥~5K tokens 时出现，小输入秒回；doubao 同端点正常）。配置无法修复——omp 卡 "working" 时 esc 重试即可；持续出现持 request id 找火山报障
 
 图片生成 Skill（`~/.omp/agent/skills/byted-ark-seedream-skill/`）：豆包 Seedream 生图（Agent Plan 专属版），支持文生图/图生图/连贯组图/联网搜索；API Key 走 `~/.omp/agent/.env` 的 `ARK_SEEDREAM_API_KEY`，图片默认存启动目录 `Seedream-Images/`（已加入 `.gitignore`）。
