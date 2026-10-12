@@ -24,6 +24,14 @@ flowchart LR
 - **推方向**（提升）：`sync-from-live.ps1`。把运行层的配置改动提升回仓库并 push，`shellPath`/`setupVersion` 自动剥离，真实 apiKey 永不入仓（详见文末「反向同步」）。
 - **分工**：`models.yml` 模型定义与计价、`skills/`、`lsp.json`、`mcp.json`、`agents/` 以仓库为源（推方向不回写）；`config.yml`、`settings.json` 等其余配置双向流动。
 
+## 分支
+
+| 分支 | 角色 |
+|------|------|
+| `master` | **纯配置同步**（本仓库真源）：不含任何 bundle 补丁，状态栏不显示 cost |
+| `bench-speed` | 在 `master` 之上保留模型输出速度测试（`scripts/bench-speed.ts` + README 测速章节） |
+| `cny-patch-tiers` | 在 `master` 之上叠加人民币 cost 状态栏补丁（`scripts/omp-cny-patch.mjs` 三态：coding plan / free / ¥） |
+
 ## 目录结构
 
 ```
@@ -36,8 +44,10 @@ omp-config/
 │   ├── models.yml            # 模型提供商 + 人民币计价；apiKey 仓库留占位符，本地手动填（setup 不再交互）
 │   └── settings.json         # 持久化设置
 ├── skills/                   # → ~/.omp/agent/skills/
+├── docs/                     # 配置同步流程可视化（HTML + mermaid 源）
 ├── setup.ps1                 # 一键部署脚本（仓库 → ~/.omp，Windows / PowerShell，纯配置无补丁）
 ├── sync-from-live.ps1        # 反向同步脚本（~/.omp → 仓库，密钥不入仓）
+├── doctor.ps1                # 只读健康检查（不自动修复）
 └── README.md
 ```
 
@@ -45,9 +55,11 @@ omp-config/
 
 > **PowerShell**：`setup.ps1` 同时支持 Windows PowerShell 5.1 与 PowerShell 7+（脚本已带 UTF-8 BOM，中文注释/输出在两种环境下均解析正常；终端若显示中文乱码仅影响显示，不影响执行）。
 
-- `setup.ps1` 会自动安装/升级 bun 全局包到推荐的 **OMP 18.8.3**（版本不同即重装）。支持自定义 `BUN_INSTALL`（`setup.ps1` / `doctor.ps1` 同一约定）。
-- 已安装 `bun`
-- 已安装语言服务器（gopls、pylsp 等）
+前置条件：
+- 已安装 [`bun`](https://bun.sh)：`setup.ps1` 用 `bun install -g` 安装/升级 omp
+- 已安装语言服务器 `gopls`、`pylsp`（未装则保留裸名命令，仅对应语言无补全）
+
+omp 由 `setup.ps1` 自动安装/升级到推荐版本 **18.8.3**（版本不符即重装）；支持自定义 `BUN_INSTALL`（`setup.ps1` / `doctor.ps1` 同一约定）。
 
 ### 步骤（一键部署）
 
@@ -62,11 +74,11 @@ cd omp-config
 ```
 
 脚本流程（自动执行，无需手动抄步骤）：
-1. 校验 bun / omp 已安装
-2. 升级 omp 到推荐版本（`$RecommendedOmpVersion`，非匹配即重装）、复制 `agent/` → `~/.omp/agent/`、`skills/` → `~/.omp/agent/skills/`
+1. 校验 bun 已安装（缺失即退出）
+2. 安装/升级 omp 到推荐版本（`$RecommendedOmpVersion`，非匹配即重装）、复制 `agent/` → `~/.omp/agent/`、`skills/` → `~/.omp/agent/skills/`
 3. 探测本机 pwsh / gopls / python / codebase-memory-mcp 路径，写回对应配置
 4. 注入 API Key：**不再交互输入**——仅从环境变量（`OMP_AGENT_PLAN_KEY`/`ZHIPU_API_KEY`）读取，设了就写入对应 provider；未设置则保留 `<...>` 占位符。重部署时**按 provider 保留本地已填的真实 key**（通用扫描全部 provider，非硬编码），结尾列出仍为占位符的 provider 与文件路径，提示手动编辑
-5. 完成（本分支不部署任何 bundle 补丁，omp 保持原样）
+5. 完成（不部署任何 bundle 补丁，omp 保持原样）
 
 只读健康检查：`.\doctor.ps1`。它检查 Bun、OMP/bundle 版本、四个配置文件（`config.yml` / `models.yml` / `lsp.json` / `mcp.json`）存在性及 gopls/python/codebase-memory-mcp 是否可用（工具按 PATH 判定），不会自动修复。注意它只查部署健康，不查 live 与仓库之间的内容漂移——漂移用 `.\sync-from-live.ps1` 的预检查看（无差异时会明确输出"无需同步"）。
 
@@ -82,6 +94,8 @@ cd omp-config
 | `~/.omp/agent/config.yml` | `statusLine` | 直接复制 | 自定义状态栏：custom 段列表（无 cost 段）、git 只显分支名、path 缩写、模型名带思考档位 |
 | `~/.omp/agent/settings.json` | — | 直接复制 | 不再单独设 shellPath，统一走 config.yml |
 | `~/.omp/agent/config.yml` | `extendedContext` | 直接复制 | 当前为 `false`；`cycleOrder` 为 `default → smol → slow → tiny` |
+| `~/.omp/agent/config.yml` | `defaultThinkingLevel` / `hideThinkingBlock` | 直接复制 | 默认思考档 `auto`；`hideThinkingBlock: true` 隐藏思考块 |
+| `~/.omp/agent/config.yml` | `images.describeForTextModels` | 直接复制 | `true`：文本模型收到图片时委托 `vision` 角色描述（见「视觉能力配置」） |
 | `~/.omp/agent/config.yml` | `retry.fallbackChains` | 直接复制 | 联网搜索失败回退链，25 项按序（见「联网搜索」） |
 | `~/.omp/agent/config.yml` | `commands` | 直接复制 | 命令来源开关：`enableClaudeUser`（`~/.claude/commands/`）、`enableOpencodeProject`（`.opencode/commands/`） |
 
@@ -92,6 +106,10 @@ cd omp-config
 omp
 ```
 
+## 配置详解
+
+以下各节说明部署到 `~/.omp` 的关键配置块。
+
 ### 状态栏 (`config.yml` → `statusLine`)
 
 ```yaml
@@ -99,6 +117,7 @@ statusLine:
   preset: custom
   leftSegments: [pi, vim, model, mode, collab, path, git, pr, context_pct]
   rightSegments: [session_name]
+  separator: powerline-thin
   segmentOptions:
     git:
       showBranch: true         # 只显示分支名
@@ -189,7 +208,7 @@ mnemopi:
 
 - **`per-project-tagged` 优于 `per-project`**：写入项目隔离，召回还能带上全局记忆——跨项目通用经验（如方舟网关踩坑）仍可浮现。
 - **不要开 `noEmbeddings: true`**：FTS5 默认 `unicode61` tokenizer 对中文按整句切分（无分词），关掉向量召回会让中文查询只能逐字命中；`multilingual` e5 本地推理无网络依赖、无费用，是中文召回主力。
-- **`llmMode: smol`**：事实抽取/整理走 `tiny`→`smol` 角色（doubao-seed-2.0-mini），免费额度内。
+- **`llmMode: smol`**：事实抽取/整理走轻量 `tiny`→`smol` 角色（commandcode 轻量模型），不占用主模型额度。
 - **consolidation 需手动触发**：正常退出只做轻量 drain，working → episodic 晋级与图谱构建仅在 `/memory enqueue` 时发生（且只整理 >12h 的行）；重要会话结束前跑一次。
 - **进阶开关保持关闭**：`polyphonicRecall` 的 graph voice 依赖 consolidation 产生的 `gists`/`graph_edges`（未触发时恒为空）；`proactiveLinking` 的实体抽取为英文偏置正则，中文收益微弱。
 
@@ -232,6 +251,7 @@ pwsh -File "$d\install.ps1" --skip-config
 火山方舟 Agent Plan（`agent-plan` provider，订阅制，OpenAI 兼容）：
 - **deepseek-v4.1-flash** — Agent Plan 通道 DeepSeek V4.1 Flash（1M 上下文，多模态文本+图像，393K 输出，`reasoning`）
 - **glm-5-3-flash** — Agent Plan 通道 GLM 5.3 Flash（多模态文本+图像，1M 上下文）
+- **glm-5.3** — Agent Plan 通道 GLM-5.3（1M 上下文，text-only）
 - `baseUrl: https://ark.cn-beijing.volces.com/api/plan/v3`；仓库中占位脱敏，部署后本地填入
 
 图片生成 Skill（`~/.omp/agent/skills/byted-ark-seedream-skill/`）：豆包 Seedream 生图（Agent Plan 专属版），支持文生图/图生图/连贯组图/联网搜索；API Key 走 `~/.omp/agent/.env` 的 `ARK_SEEDREAM_API_KEY`，图片默认存启动目录 `Seedream-Images/`（已加入 `.gitignore`）。
@@ -239,15 +259,15 @@ pwsh -File "$d\install.ps1" --skip-config
 智谱 GLM（`zhipu` provider，智谱开放平台，OpenAI 兼容）：
 - **glm-5.3-flash** — `Zhipu` 角色备用；多模态（文本+图像），1M 上下文，131K 输出上限，`reasoning`（思考档位 `low/high/max`，默认 `max`）
 - `baseUrl: https://open.bigmodel.cn/api/paas/v4`，请求自动落到 `/chat/completions`；`open.bigmodel.cn` 主机会被自动识别为智谱，走 `zai` thinking 方言（`thinking.type: enabled` + `reasoning_effort`，工具调用时自动开启 `tool_stream`）
-- 价格（元/百万 tokens）：输入 **0.8**、输出 **2.8**、缓存命中 **0.23**、缓存写入 **0.8**。`models.yml` `cost` 块**直接写人民币价**（本分支状态栏不显示 cost，此价格供 API 记账/其他工具使用）。
+- 价格（元/百万 tokens）：输入 **0.8**、输出 **2.8**、缓存命中 **0.23**、缓存写入 **0.8**。`models.yml` `cost` 块**直接写人民币价**（master 状态栏不显示 cost，此价格供 API 记账/其他工具使用）。
 
 Command Code（`commandcode` provider，omp **内置**，订阅制网关）：
-- 默认主通道：`default` / `plan` / `slow` / `smol` / `tiny` / `commit` / `vision` 角色均指向此 provider 的模型
+- 默认主通道：`default` / `plan` / `slow` / `smol` / `tiny` / `commit` / `task` / `advisor` / `vision` 角色均指向此 provider 的模型
 - **无需 `apiKey`/`baseUrl`**：由 omp 内置定义，登录凭证存于 omp 凭据库（`agent.db`）
-- `models.yml` 只用 `modelOverrides` 覆盖两个模型：`inclusionai/ling-3.1-flash:free`（上下文/输出上限）与 36 个支持视觉的模型的 `input` 能力（见「视觉能力配置」）
+- `models.yml` 只用 `modelOverrides` 覆盖：`inclusionai/ling-3.1-flash:free` 的上下文/输出上限，以及 36 个支持视觉的模型的 `input` 能力（见「视觉能力配置」）
 - 计费与额度由订阅计划决定；`MODEL_NOT_IN_PLAN`（403）表示当前订阅未包含该模型
 
-> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `smol` 与 `DeepSeek` 角色指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，`models.yml` 中仅需一个 `deepseek:` 块写 `modelOverrides` 覆盖内置美元价为本项目的人民币价（见 `agent/models.yml`）。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。`deepseek-flash` 由官方 `/v1/models` 动态发现，价格靠 `modelOverrides` 固定，官方降价时改 `models.yml` 即可。
+> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，`models.yml` 中仅需一个 `deepseek:` 块写 `modelOverrides` 覆盖内置美元价为本项目的人民币价（见 `agent/models.yml`）。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。`deepseek-flash` 由官方 `/v1/models` 动态发现，价格靠 `modelOverrides` 固定，官方降价时改 `models.yml` 即可。
 
 ### 新增模型提供商节点（`models.yml`）
 
@@ -267,7 +287,7 @@ providers:
         contextWindow: 1000000     # ⑧ 上下文窗口（token）
         maxTokens: 65536           # ⑨ 输出上限（token）
         reasoning: true            # ⑩ 思考模型才写 true（自动派生思考档位）
-        cost:                      # ⑪ 计价（**人民币/百万 tokens**）：直接写厂商人民币价，状态栏原样显示
+        cost:                      # ⑪ 计价（**人民币/百万 tokens**）：直接写厂商人民币价（cny-patch-tiers 状态栏会原样显示）
           input: 0.8               #    输入价（元/百万 tokens）
           output: 2.8              #    输出价
           cacheRead: 0.23          #    缓存命中价
@@ -281,13 +301,11 @@ providers:
 
 - **思考档位自动派生**：`reasoning: true` 后 omp 按模型 ID 自动识别（如 GLM-5.3+/Kimi K3 得到 `low/high/max`、默认 `max`），**不要**手写 `thinking:` 块，除非默认档位不对。
 - **多模态**：厂商支持图像就把 `input` 写 `[text, image]`，omp 会自动按 `image_url` 内容块发送。
-- **计价说明**：模型未写 `cost` 视为免费；写了 `cost` 按元/百万 tokens 记账。本分支状态栏无 cost 段，`cost` 块只作记账真源（`cny-patch-tiers` 分支会把它显示成 ¥）。
+- **计价说明**：模型未写 `cost` 视为免费；写了 `cost` 按元/百万 tokens 记账。master 状态栏无 cost 段，`cost` 块只作记账真源（`cny-patch-tiers` 分支会把它显示成 ¥）。
 - **验证**：`omp models ls` 应能看到新 provider 与模型；若有 `models.yml validation failed` 报错，说明字段名或取值不合法（对照上面模板检查）。
 - **占位符约定**：仓库中 `apiKey` 一律用 `<XXX_API_KEY>` 占位脱敏；**setup 不再交互填 key**——部署时按 provider 保留本地已填的真实 key，未填项在结尾列出并提示手动编辑 `~/.omp/agent/models.yml`。已知 provider（Agent Plan/智谱）可选设环境变量（`OMP_AGENT_PLAN_KEY`/`ZHIPU_API_KEY`）自动注入；新增 provider 若要环境变量注入，需在 `setup.ps1` 的 `$envVarByProvider` 登记其环境变量名。
 
 > **内置 provider 覆盖**：omp 内置 provider（`deepseek`、`anthropic`、`openai` 等）不写 `baseUrl`/`models` 也能在 `providers:` 下建块，只写 `modelOverrides` 即可覆盖内置模型的任意字段（`cost`/`contextWindow` 等）——`cost` 未覆盖的字段逐项回退内置价。
-
-> 本分支（master）为**纯净配置**：不部署任何 bundle 补丁，状态栏不显示 cost（见「状态栏」一节）。需要人民币 cost 显示时，切到 `cny-patch-tiers` 分支部署（含 `scripts/omp-cny-patch.mjs` 三态补丁：coding plan / free / ¥）。
 
 `setup.ps1` 幂等：重复运行覆盖最新配置、保留已填 API Key。注意：部署会以仓库版本覆盖 live `config.yml`（仅 `shellPath` 由探测回写保护）——若你在 omp 里改过配置，先跑 `.\sync-from-live.ps1` 提升再部署，否则改动会被回退。
 
