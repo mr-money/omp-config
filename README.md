@@ -43,6 +43,8 @@ omp-config/
 │   ├── mcp.json              # MCP 服务器（默认 PATH 裸名，setup 探测覆盖）
 │   ├── models.yml            # 模型提供商 + 人民币计价；apiKey 仓库留占位符，本地手动填（setup 不再交互）
 │   └── settings.json         # 持久化设置
+├── scripts/
+│   └── bench-speed.ts        # 模型输出速度测试（仓库内 `bun` 运行，读 ~/.omp/agent/models.yml）
 ├── skills/                   # → ~/.omp/agent/skills/
 ├── docs/                     # 配置同步流程可视化（HTML + mermaid 源）
 ├── setup.ps1                 # 一键部署脚本（仓库 → ~/.omp，Windows / PowerShell，纯配置无补丁）
@@ -249,10 +251,11 @@ pwsh -File "$d\install.ps1" --skip-config
 ### 模型提供商 (`models.yml`)
 
 火山方舟 Agent Plan（`agent-plan` provider，订阅制，OpenAI 兼容）：
-- **deepseek-v4.1-flash** — Agent Plan 通道 DeepSeek V4.1 Flash（1M 上下文，多模态文本+图像，393K 输出，`reasoning`）
-- **glm-5-3-flash** — Agent Plan 通道 GLM 5.3 Flash（多模态文本+图像，1M 上下文）
+- **deepseek-v4.1-flash** — Agent Plan 通道 DeepSeek V4.1 Flash（1M 上下文，多模态文本+图像，393K 输出，`reasoning`；实测 TTFT ~1.4-1.9s、~155-180 tok/s，小输入正常，大输入警惕 TTFT 挂起）
+- **glm-5-3-flash** — Agent Plan 通道 GLM 5.3 Flash（多模态文本+图像，1M 上下文；实测 TTFT ~1.2s、~71 tok/s）
 - **glm-5.3** — Agent Plan 通道 GLM-5.3（1M 上下文，text-only）
 - `baseUrl: https://ark.cn-beijing.volces.com/api/plan/v3`；仓库中占位脱敏，部署后本地填入
+- ⚠️ 实测该端点对 deepseek 存在**服务端间歇性 TTFT 挂起**（约 50% 概率 >60s 零字节，输入 ≥~5K tokens 时出现，小输入秒回；doubao 同端点正常）。配置无法修复——omp 卡 "working" 时 esc 重试即可；持续出现持 request id 找火山报障
 
 图片生成 Skill（`~/.omp/agent/skills/byted-ark-seedream-skill/`）：豆包 Seedream 生图（Agent Plan 专属版），支持文生图/图生图/连贯组图/联网搜索；API Key 走 `~/.omp/agent/.env` 的 `ARK_SEEDREAM_API_KEY`，图片默认存启动目录 `Seedream-Images/`（已加入 `.gitignore`）。
 
@@ -306,6 +309,52 @@ providers:
 - **占位符约定**：仓库中 `apiKey` 一律用 `<XXX_API_KEY>` 占位脱敏；**setup 不再交互填 key**——部署时按 provider 保留本地已填的真实 key，未填项在结尾列出并提示手动编辑 `~/.omp/agent/models.yml`。已知 provider（Agent Plan/智谱）可选设环境变量（`OMP_AGENT_PLAN_KEY`/`ZHIPU_API_KEY`）自动注入；新增 provider 若要环境变量注入，需在 `setup.ps1` 的 `$envVarByProvider` 登记其环境变量名。
 
 > **内置 provider 覆盖**：omp 内置 provider（`deepseek`、`anthropic`、`openai` 等）不写 `baseUrl`/`models` 也能在 `providers:` 下建块，只写 `modelOverrides` 即可覆盖内置模型的任意字段（`cost`/`contextWindow` 等）——`cost` 未覆盖的字段逐项回退内置价。
+
+### 模型输出速度测试 (`scripts/bench-speed.ts`)
+
+仓库内用 bun 运行，读**部署后**的 `~/.omp/agent/models.yml`（真实 key 在这里），对每个 provider 的每个模型顺序发一次流式请求，测输出速度。
+
+```powershell
+bun scripts/bench-speed.ts                 # 测全部
+bun scripts/bench-speed.ts --only glm      # 只测 id 含 "glm" 的模型
+bun scripts/bench-speed.ts --list          # 只列待测清单，不发请求
+```
+
+指标：
+
+- **TTFT(ms)** — 请求发出到**首个增量 chunk**（含网络 + 排队 + 模型首 token）。基线必须在 `fetch` 之前取：部分网关把响应头憋到首 token 才发，`fetch` 返回后取基线会得到恒为 0 的假值。
+- **tok/s** — `usage.completion_tokens ÷ (末 chunk − 首 chunk)`。无 usage 时按增量 chunk 数近似并标 `(approx)`。
+- **生成(s) / 总(s)** — 纯生成时长 / 整个请求墙钟（`总 ≥ TTFT + 生成`，可用来自查数据一致性）。
+- 只测速度，**不测成本**。
+
+**成本控制**：固定短 prompt（"用一句话介绍你自己。"）+ 输出硬顶 `max_tokens: 128` + 每模型仅 1 次、顺序执行、测速失败不重试（并发会互相干扰测速数字，重试烧双倍钱）。全量一轮约几千 token。占位符 `<...>` 的 provider 整组跳过（`SKIP`）。
+
+**厂商差异（脚本已自动处理，状态列有标注）**：
+
+| 现象 | 处理 |
+|------|------|
+| doubao-seed 系**不尊重** `max_tokens`（实测一次输出 871 token，思考 token 不计入上限） | 检测 `completion_tokens` 超限后改用标准字段 `max_completion_tokens` 重试 → `(cap via max_completion_tokens)`；仍超限标 `(cap ignored)` |
+| 厂商"关思考"参数被拒（400） | 去掉扩展参数降级重试 → `(extras off)` |
+| 部分网关**整段一次性返回**（单增量 chunk），生成时长为 0 | tok/s 退化为用 TTFT 作分母的**下界估计** → `(single-chunk, rate~lower bound)`；此时真实瓶颈看 TTFT |
+| 部分厂商思考增量在 `delta.reasoning`（非 `reasoning_content`） | 增量检测同时认三个字段，否则 TTFT 会虚高成"思考结束后首个正文 token" |
+| 智谱 **GLM-5.3 起强制思考**，`thinking: {type: disabled}` 直接报错 | 改用 `reasoning_effort: low` 降档；更早的 GLM 仍用 `thinking.disabled` |
+
+**实测参考**（历史一轮全量，仅供横向比较；TTFT 受网络与厂商排队影响波动较大）：
+
+| provider | model | TTFT(ms) | tok/s |
+|----------|-------|---------:|------:|
+| volcengine-coding ³ | glm-5.3 | 5191 | 33.8 |
+| volcengine-coding ³ | glm-5-3-flash | 4940 | 23.1 |
+| volcengine-coding ³ | doubao-seed-2.0-mini | 521 | 91.7 |
+| volcengine-coding ³ | doubao-seed-evolving | 857 | 30.0 |
+| volcengine-coding ³ | deepseek-v4-1-flash-260910 | 444 ² | 85.9 ² |
+| agent-plan | deepseek-v4.1-flash | 1381 | 177.5 |
+| agent-plan | glm-5-3-flash | 1185 | 71.2 |
+| zhipu | glm-5.3-flash | 750 | 30.0 |
+
+¹ 单 chunk 一次性返回，tok/s 为下界；真实瓶颈是 TTFT。
+² 方舟 v4.1 模型暂未接入 coding plan（实测 `UnsupportedModel`），该行沿用 v4 旧版实测值（TTFT ~444ms、~86 tok/s），待开通后重测更新。agent-plan 两行为 2026-09-18 实测（小输入；大输入警惕该端点 TTFT 挂起）。
+³ `volcengine-coding` 订阅已停用，保留为历史参考；当前主通道为 `commandcode`。
 
 `setup.ps1` 幂等：重复运行覆盖最新配置、保留已填 API Key。注意：部署会以仓库版本覆盖 live `config.yml`（仅 `shellPath` 由探测回写保护）——若你在 omp 里改过配置，先跑 `.\sync-from-live.ps1` 提升再部署，否则改动会被回退。
 
