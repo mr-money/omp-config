@@ -129,6 +129,20 @@ providers:
     # openai-completions 线必须同时声明 input 与 compat.stripImageInput:false；
     # 否则 omp 的能力判定 _Te() 仍返回 false，图片会被摘除。
     modelOverrides:
+      # reflection/beam 与 stealth/cat-jam 不在内置 compat 目录（command-code@1.67.0 之后新增），
+      # 多轮对话要求回传 reasoning_content：实测拒绝 ""/省略，接受 "." 占位（2026-10-17）。
+      "reflection/beam:free":
+        compat:
+          requiresReasoningContentForToolCalls: true
+          requiresReasoningContentForAllAssistantTurns: true
+          allowsSyntheticReasoningContentForToolCalls: false
+          syntheticReasoningContentFallback: "."
+      "stealth/cat-jam:free":
+        compat:
+          requiresReasoningContentForToolCalls: true
+          requiresReasoningContentForAllAssistantTurns: true
+          allowsSyntheticReasoningContentForToolCalls: false
+          syntheticReasoningContentFallback: "."
       "inclusionai/ling-3.1-flash:free":
         contextWindow: 262144
         maxTokens: 32768
