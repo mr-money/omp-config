@@ -3,7 +3,7 @@ modelRoles:
   slow: openai-codex/gpt-6.1-sol:high
   advisor: openai-codex/gpt-6.1-sol:low
   commit: agent-plan/glm-5-3-flash
-  smol: agent-plan/glm-5-3-flash
+  smol: volcengine-coding/glm-5-3-flash
   tiny: commandcode/reflection/beam:free
   vision: agent-plan/deepseek-v4.1-flash:low
   DeepSeek: deepseek/deepseek-flash:auto

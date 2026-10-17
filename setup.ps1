@@ -1,10 +1,25 @@
-﻿# 行为：安装推荐版本 OMP -> 复制配置 -> (可选)环境变量填 key -> 提示手动编辑
+﻿# 行为：安装推荐版本 OMP -> 部署配置 -> (可选)环境变量填 key -> 提示手动编辑
+#
+# 安全流程：
+#   1) drift guard（helper guard-deploy）：本机基线校验 + 仓库边界校验，放在任何安装/复制之前
+#   2) 安装/升级 omp（Bun）
+#   3) 逐条复制受管文件（guard-deploy --json 的 files 清单；models.yml 由 deploy-models 处理）
+#   4) deploy-models：仓库为源写 models.yml，保留本机同 provider 真实 key / 注入 OMP_AGENT_PLAN_KEY / ZHIPU_API_KEY
+#   5) set-shell：pwsh 探测，结构化写回 shellPath（无 pwsh 则删除）
+#   6) record-state：部署成功后刷新本机基线（失败不刷新）
+#
+# .\setup.ps1 -Check 只做仓库校验 + guard，不安装、不复制、不备份、不记基线。
+
+param(
+    [switch]$Check    # 只读部署预检：输出将允许/拒绝及原因
+)
 
 $ErrorActionPreference = "Stop"
 
 $RepoRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
 $OmpHome = Join-Path $env:USERPROFILE ".omp"
 $AgentDir = Join-Path $OmpHome "agent"
+$Helper = Join-Path $RepoRoot "scripts\config-sync.ts"
 
 $bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $env:USERPROFILE ".bun" }
 $OmpPkgDir = Join-Path $bunInstall "install\global\node_modules\@oh-my-pi\pi-coding-agent"
@@ -16,23 +31,37 @@ function Write-OK   { param($msg) Write-Host "    OK  $msg" -ForegroundColor Gre
 function Write-Warn { param($msg) Write-Host "    WARN $msg" -ForegroundColor Yellow }
 function Write-Fail { param($msg) Write-Host "    FAIL $msg" -ForegroundColor Red }
 
-# 写 UTF-8 无 BOM（PS5.1 的 Set-Content 默认用 Default 编码，会损坏中文/换行）
-function Write-Utf8Text {
-    param([string]$Path, [string]$Content)
-    [System.IO.File]::WriteAllText($Path, $Content, [System.Text.UTF8Encoding]::new($false))
-}
-
-# 1. 前置校验
+# 1. 前置：bun + helper
 Write-Step "校验前置依赖"
-
 $bun = Get-Command bun -ErrorAction SilentlyContinue
-if (-not $bun) {
-    Write-Fail "未找到 bun。请先安装：irm bun.sh/install.ps1 | iex"
+if (-not $bun) { Write-Fail "未找到 bun。请先安装：irm bun.sh/install.ps1 | iex"; exit 1 }
+Write-OK "bun $(& bun --version) @ $($bun.Source)"
+if (-not (Test-Path $Helper)) { Write-Fail "缺少 helper: $Helper"; exit 1 }
+
+# 2. 部署守卫（先于一切安装/目录创建/复制）
+Write-Step "部署守卫（本机漂移 + 仓库边界）"
+& bun $Helper guard-deploy --repo $RepoRoot --home $OmpHome --backup --json | Out-Null
+if ($LASTEXITCODE -ne 0) {
+    Write-Fail "部署守卫未通过，本机文件未做任何修改"
+    Write-Host "  处理：先运行 .\sync-from-live.ps1 -Check 审查本机改动，再 .\sync-from-live.ps1 -Export 收集，或还原本机改动"
     exit 1
 }
-Write-OK "bun $(& bun --version) @ $($bun.Source)"
+$guardRaw = ([string](& bun $Helper guard-deploy --repo $RepoRoot --home $OmpHome --json) | ConvertFrom-Json)
+$files = @($guardRaw.files)
+if ($files.Count -eq 0) { Write-Fail "guard-deploy 返回空 files 清单"; exit 1 }
+Write-OK "守卫通过：受管文件 $($files.Count) 项"
 
-# 检查并确保 bun 全局 bundle；非推荐版本即重装（幂等：已是该版本则跳过）。
+if ($Check) {
+    Write-Step "部署预检结果（-Check，未做任何修改）"
+    Write-Host "  将部署 $($files.Count) 个受管文件："
+    foreach ($f in $files) { Write-Host "    $f" }
+    Write-OK "预检通过，可执行 .\setup.ps1"
+    exit 0
+}
+
+# ---- 以下为实际部署 ----
+
+# 3. 检查并确保 bun 全局 bundle；非推荐版本即重装（幂等：已是该版本则跳过）。
 $needInstall = $true
 if (Test-Path (Join-Path $OmpPkgDir "package.json")) {
     try { $installed = (Get-Content (Join-Path $OmpPkgDir "package.json") -Raw | ConvertFrom-Json).version; $needInstall = ($installed -ne $RecommendedOmpVersion) } catch { $needInstall = $true }
@@ -49,108 +78,37 @@ if ([version]$actual -lt [version]"18.0.2") { Write-Fail "OMP 版本校验失败
 if ($actual -ne $RecommendedOmpVersion) { Write-Warn "omp 版本 $actual 与推荐版本 $RecommendedOmpVersion 不一致" }
 Write-OK "omp bundle $actual"
 
-# 2. 确保目录存在
+# 4. 确保目录存在（仅受管文件的目标目录）
 New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $AgentDir "skills") | Out-Null
+New-Item -ItemType Directory -Force -Path (Join-Path $AgentDir "agents") | Out-Null
 
-# 3. 复制配置文件
-Write-Step "复制 agent 配置"
-$srcModels = Join-Path $RepoRoot "agent\models.yml"
-$dstModels = Join-Path $AgentDir "models.yml"
-
-# 从 models.yml 中提取所有 provider 块（2 空格缩进顶层键）中已填真实值（非占位符 <...>）的 apiKey。
-# 返回 provider 名 -> key 的哈希，供重部署时回填保留；通用扫描，新增 provider 无需改此脚本。
-function Get-ProviderApiKeys {
-    param([string]$Content)
-    $keys = @{}
-    $blockMatches = [regex]::Matches($Content, "(?m)^  ([A-Za-z0-9_-]+):\r?\n(.*?)(?=^  [A-Za-z0-9_-]+:\s*$|\z)", [System.Text.RegularExpressions.RegexOptions]::Singleline)
-    foreach ($m in $blockMatches) {
-        $provider = $m.Groups[1].Value
-        $km = [regex]::Match($m.Groups[2].Value, '(?m)^\s*apiKey:\s*(\S+)')
-        if (-not $km.Success) { continue }
-        $val = $km.Groups[1].Value
-        if ($val -like '<*>*') { continue }   # 占位符 <...> 视为未填
-        $keys[$provider] = $val
-    }
-    return $keys
+# 5. 逐条复制受管文件（models.yml 交给 deploy-models；config.yml 先复制，shellPath 之后结构化写回）
+Write-Step "复制受管文件（guard 清单逐条）"
+foreach ($rel in $files) {
+    if ($rel -eq "agent/models.yml") { continue }
+    $src = Join-Path $RepoRoot ($rel -replace "/", "\")
+    if (-not (Test-Path $src)) { Write-Fail "受管文件在仓库中缺失: $rel"; exit 1 }
+    $dst = Join-Path $AgentDir ($rel.Substring("agent/".Length) -replace "/", "\")
+    $dstDir = Split-Path -Parent $dst
+    if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Force -Path $dstDir | Out-Null }
+    Copy-Item -Force $src $dst
+    Write-OK $rel
 }
 
-# provider 名 -> 占位符（apiKey: <XXX> 形态）。用于环境变量注入与占位符盘点。
-$script:ProviderPlaceholders = @{
-    "agent-plan"       = "<ARK_API_KEY>"
-    "zhipu"             = "<ZHIPU_API_KEY>"
-}
+# 6. models.yml：仓库为源 + 本机 key 保留/环境变量注入（helper deploy-models）
+Write-Step "部署 models.yml（保留本机 key / 环境变量注入）"
+& bun $Helper deploy-models --repo $RepoRoot --home $OmpHome --output (Join-Path $AgentDir "models.yml")
+if ($LASTEXITCODE -ne 0) { Write-Fail "models.yml 部署失败（本机文件已被 guard 备份）"; exit 1 }
 
-# 目标机已有真实 key（非占位）则提取保留，待复制后回填——
-# 不能跳过整个文件，否则新模型定义（glm-5.3 / doubao-seed-2.0-mini / agent-plan 等）永不部署
-$existingKeys = @{}   # provider -> key
-if ((Test-Path $dstModels) -and (Test-Path $srcModels)) {
-    $dstContent = [System.IO.File]::ReadAllText($dstModels)
-    $existingKeys = Get-ProviderApiKeys $dstContent
-    foreach ($p in $existingKeys.Keys) {
-        Write-OK "检测到 models.yml 已有 $p 的 apiKey，部署后回填保留"
-    }
-}
-
-# 复制除 models.yml 外的所有 agent 文件
-Get-ChildItem (Join-Path $RepoRoot "agent") -Exclude "models.yml" | ForEach-Object {
-    Copy-Item -Force -Recurse $_.FullName -Destination $AgentDir
-}
-# models.yml 始终用仓库最新定义；若原有真实 key，复制后回填
-Copy-Item -Force $srcModels -Destination $dstModels
-if ($existingKeys.Count -gt 0) {
-    $yml = [System.IO.File]::ReadAllText($dstModels)
-    foreach ($p in $existingKeys.Keys) {
-        $key = $existingKeys[$p]
-        $placeholder = $script:ProviderPlaceholders[$p]
-        if (-not $placeholder) {
-            # 新 provider 仓库版还没定义占位符（理论少见）：按 provider 块内首个 apiKey 兜底替换
-            $yml = [regex]::Replace($yml, "(?ms)(^  $([regex]::Escape($p)):\r?\n.*?apiKey:\s*)(\S+)",
-                { param($m) if ($m.Groups[2].Value -like '<*>*') { $m.Groups[1].Value + $key } else { $m.Value } })
-        } else {
-            # 每个 provider 有唯一占位符，全局精确替换不会串 key；MatchEvaluator 插入字面值（防 key 含 $ 被当回引用）
-            $yml = [regex]::Replace($yml, 'apiKey:\s*' + [regex]::Escape($placeholder),
-                { param($m) "apiKey: $key" })
-        }
-    }
-    Write-Utf8Text $dstModels $yml
-    Write-OK "已回填各 provider apiKey 到最新 models.yml"
-}
-
-Write-Step "复制 skills"
-$skillsSrc = Join-Path $RepoRoot "skills"
-if (Test-Path $skillsSrc) {
-    Copy-Item -Force -Recurse (Join-Path $skillsSrc "*") -Destination (Join-Path $AgentDir "skills")
-    Write-OK "skills/ -> ~/.omp/agent/skills/"
-}
-
-# 4. 探测 shell 路径（pwsh 优先），写回 config.yml
+# 7. shell 探测 + 结构化写回 config.yml（未发现 pwsh 则删除 shellPath）
 Write-Step "探测 shell 路径"
-$configYml = Join-Path $AgentDir "config.yml"
-$shellPath = $null
 $pwsh = Get-Command pwsh -ErrorAction SilentlyContinue
-if ($pwsh) {
-    $shellPath = $pwsh.Source
-}
+& bun $Helper set-shell --repo $RepoRoot --home $OmpHome --file (Join-Path $AgentDir "config.yml") $(if ($pwsh) { @("--shell", $pwsh.Source) } else { @() })
+if ($LASTEXITCODE -ne 0) { Write-Fail "shellPath 写回失败"; exit 1 }
+if (-not $pwsh) { Write-Warn "未检测到 pwsh，config.yml 不设 shellPath（omp 回退到 cmd.exe）" }
 
-if ($shellPath -and (Test-Path $configYml)) {
-    $yml = [System.IO.File]::ReadAllText($configYml)
-    $eol = if ($yml -match "\r\n") { "`r`n" } else { "`n" }
-    if ($yml -match '(?m)^shellPath:.*$') {
-        # MatchEvaluator 插入字面值（防路径含 $ 被当回引用）
-        $sp = $shellPath
-        $yml = [regex]::Replace($yml, '(?m)^shellPath:.*$', { param($m) "shellPath: $sp" })
-        Write-OK "已更新 config.yml shellPath: $shellPath"
-    } else {
-        $yml = "shellPath: $shellPath$eol" + $yml
-        Write-OK "已追加 config.yml shellPath: $shellPath"
-    }
-    Write-Utf8Text $configYml $yml
-} elseif (-not $shellPath) {
-    Write-Warn "未检测到 pwsh，config.yml 不设 shellPath（omp 回退到 cmd.exe）"
-}
-
-# 5. 探测 LSP 路径，正则替换 lsp.json 中 command 值（保留原格式，不重序列化）
+# 8. LSP 探测（保留现有规则：裸名 -> PATH 绝对路径，不重序列化）
 Write-Step "探测 LSP 工具"
 $lspJson = Join-Path $AgentDir "lsp.json"
 if (Test-Path $lspJson) {
@@ -159,7 +117,6 @@ if (Test-Path $lspJson) {
 
     $goplsCmd = Get-Command gopls -ErrorAction SilentlyContinue
     if ($goplsCmd -and $goplsCmd.Source -and $goplsCmd.Source -ne "gopls") {
-        # JSON 字符串转义 \ -> \\；MatchEvaluator 插入字面值防 $ 回引用
         $jp = $goplsCmd.Source.Replace('\', '\\')
         if ($raw -match '"command":\s*"gopls"') {
             $raw = [regex]::Replace($raw, '("command":\s*)"gopls"', { param($m) "$($m.Groups[1].Value)`"$jp`"" })
@@ -183,11 +140,11 @@ if (Test-Path $lspJson) {
     }
 
     if ($changed) {
-        Write-Utf8Text $lspJson $raw
+        [System.IO.File]::WriteAllText($lspJson, $raw, [System.Text.UTF8Encoding]::new($false))
     }
 }
 
-# 6. 探测 codebase-memory-mcp 可执行文件，把 mcp.json 的 command 从仓库裸名写成绝对路径
+# 9. MCP 探测（裸名 -> 绝对路径；无则保留裸名）
 Write-Step "探测 codebase-memory-mcp"
 $mcpJson = Join-Path $AgentDir "mcp.json"
 if (Test-Path $mcpJson) {
@@ -196,7 +153,6 @@ if (Test-Path $mcpJson) {
     $cbmExe = $null
     if ($cbmCmd -and $cbmCmd.Source) { $cbmExe = $cbmCmd.Source }
     if (-not $cbmExe) {
-        # 安装器默认落点；PATH 未刷新的会话里 Get-Command 找不到
         foreach ($cand in @(
             (Join-Path $env:LOCALAPPDATA "Programs\codebase-memory-mcp\codebase-memory-mcp.exe"),
             (Join-Path $env:USERPROFILE ".local\bin\codebase-memory-mcp.exe"))) {
@@ -204,11 +160,10 @@ if (Test-Path $mcpJson) {
         }
     }
     if ($cbmExe) {
-        # JSON 字符串转义 \ -> \\；MatchEvaluator 插入字面值防 $ 回引用
         $jp = $cbmExe.Replace('\', '\\')
         if ($raw -match '"command":\s*"codebase-memory-mcp"') {
             $raw = [regex]::Replace($raw, '("command":\s*)"codebase-memory-mcp"', { param($m) "$($m.Groups[1].Value)`"$jp`"" })
-            Write-Utf8Text $mcpJson $raw
+            [System.IO.File]::WriteAllText($mcpJson, $raw, [System.Text.UTF8Encoding]::new($false))
             Write-OK "mcp.json command -> $cbmExe"
         } else {
             Write-OK "mcp.json command 已指向具体路径，保留"
@@ -218,37 +173,10 @@ if (Test-Path $mcpJson) {
     }
 }
 
-# 7. API Key：环境变量自动注入（OMP_API_KEY / ZHIPU_API_KEY），
-#    不再交互输入。没填的保留占位符，结尾摘要会提示手动编辑。
-Write-Step "配置 API Key（环境变量注入，无交互）"
-$modelsYml = Join-Path $AgentDir "models.yml"
-$envVarByProvider = @{ "agent-plan" = "OMP_AGENT_PLAN_KEY"; "zhipu" = "ZHIPU_API_KEY" }
-if (Test-Path $modelsYml) {
-    $yml = [System.IO.File]::ReadAllText($modelsYml)
-
-    foreach ($p in $script:ProviderPlaceholders.Keys) {
-        $placeholder = $script:ProviderPlaceholders[$p]
-        if ($yml -notmatch [regex]::Escape($placeholder)) {
-            Write-OK "$p apiKey 已配置，跳过"
-            continue
-        }
-        $envVar = $envVarByProvider[$p]
-        $plain = $null
-        if ($envVar -and -not [string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($envVar))) {
-            $plain = [Environment]::GetEnvironmentVariable($envVar).Trim()
-        }
-        if ([string]::IsNullOrWhiteSpace($plain)) {
-            Write-Warn "$p 未填（占位符 $placeholder 保留）。可设环境变量 $envVar 自动注入，或手动编辑 models.yml"
-        } else {
-            # MatchEvaluator 委托插入字面 key（避免 $ 在替换模板中被当回引用）
-            $yml = [regex]::Replace($yml, 'apiKey:\s*' + [regex]::Escape($placeholder),
-                { param($m) "apiKey: $plain" })
-            Write-OK "已从环境变量写入 $p 的 apiKey"
-        }
-    }
-
-    Write-Utf8Text $modelsYml $yml
-}
+# 10. 部署成功：刷新本机基线
+Write-Step "记录本机基线"
+& bun $Helper record-state --repo $RepoRoot --home $OmpHome
+if ($LASTEXITCODE -ne 0) { Write-Fail "基线记录失败（部署内容未回滚）"; exit 1 }
 
 Write-Step "部署完成"
 Write-Host ""
@@ -257,25 +185,3 @@ Write-Host "  omp 安装: $OmpPkgBundle (bundle)"
 Write-Host ""
 Write-Host "  启动: omp"
 Write-Host ""
-
-# 占位符盘点：提示哪些 provider 的 apiKey 还需手动填写
-$unfilled = @()
-if (Test-Path $modelsYml) {
-    $finalYml = [System.IO.File]::ReadAllText($modelsYml)
-    foreach ($p in $script:ProviderPlaceholders.Keys) {
-        if ($finalYml -match ('apiKey:\s*' + [regex]::Escape($script:ProviderPlaceholders[$p]))) {
-            $unfilled += $p
-        }
-    }
-}
-if ($unfilled.Count -gt 0) {
-    Write-Host ""
-    Write-Warn "以下 provider 的 apiKey 待填写（手动编辑即可，无需重跑本脚本）："
-    foreach ($p in $unfilled) {
-        Write-Host "    $p -> $($script:ProviderPlaceholders[$p])"
-    }
-    Write-Host "  文件: $modelsYml"
-} else {
-    Write-Host ""
-    Write-OK "所有 provider 的 apiKey 已配置"
-}

@@ -1,50 +1,18 @@
 providers:
-  # volcengine-coding:
-  #   baseUrl: https://ark.cn-beijing.volces.com/api/coding/v3
-  #   api: openai-completions
-  #   apiKey: <YOUR_API_KEY>  # 替换为火山引擎 API Key
-  #   authHeader: true
-  #   models:
-  #     - id: glm-5.3
-  #       name: GLM-5.3 1M
-  #       input: [text]
-  #       contextWindow: 1024000
-  #       maxTokens: 65536
-  #       compat:
-  #         supportsDeveloperRole: false
-  #         maxTokensField: max_tokens
-  #     - id: glm-5-3-flash
-  #       name: GLM 5.3 Flash(ark)
-  #       input: [text]
-  #       contextWindow: 1024000
-  #       maxTokens: 65536
-  #       compat:
-  #         supportsDeveloperRole: false
-  #         maxTokensField: max_tokens
-  #     - id: doubao-seed-2.0-mini
-  #       name: Doubao Seed 2.0 Mini
-  #       input: [text, image]
-  #       contextWindow: 256000
-  #       maxTokens: 256000
-  #       compat:
-  #         supportsDeveloperRole: false
-  #         maxTokensField: max_tokens
-  #     - id: doubao-seed-evolving
-  #       name: Doubao Seed Evolving
-  #       input: [text, image]
-  #       contextWindow: 1024000
-  #       maxTokens: 256000
-  #       compat:
-  #         supportsDeveloperRole: false
-  #         maxTokensField: max_tokens
-  #     - id: deepseek-v4-1-flash-260910
-  #       name: DeepSeek V4.1 Flash(ark)
-  #       input: [text]
-  #       contextWindow: 1024000
-  #       maxTokens: 65536
-  #       compat:
-  #         supportsDeveloperRole: false
-  #         maxTokensField: max_tokens
+  volcengine-coding:
+    baseUrl: https://ark.cn-beijing.volces.com/api/coding/v3
+    api: openai-completions
+    apiKey: <VOLCENGINE_CODING_API_KEY>  # 替换为火山引擎 API Key
+    authHeader: true
+    models:
+      - id: glm-5-3-flash
+        name: GLM 5.3 Flash(ark)
+        input: [text, image]
+        contextWindow: 1024000
+        maxTokens: 65536
+        compat:
+          supportsDeveloperRole: false
+          maxTokensField: max_tokens
   agent-plan:
     baseUrl: https://ark.cn-beijing.volces.com/api/plan/v3
     api: openai-completions
@@ -132,12 +100,14 @@ providers:
       # reflection/beam 与 stealth/cat-jam 不在内置 compat 目录（command-code@1.67.0 之后新增），
       # 多轮对话要求回传 reasoning_content：实测拒绝 ""/省略，接受 "." 占位（2026-10-17）。
       "reflection/beam:free":
+        reasoning: true
         compat:
           requiresReasoningContentForToolCalls: true
           requiresReasoningContentForAllAssistantTurns: true
           allowsSyntheticReasoningContentForToolCalls: false
           syntheticReasoningContentFallback: "."
       "stealth/cat-jam:free":
+        reasoning: true
         compat:
           requiresReasoningContentForToolCalls: true
           requiresReasoningContentForAllAssistantTurns: true

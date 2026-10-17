@@ -2,6 +2,11 @@
 __pycache__/
 *.pyc
 
+# Secrets (env files never enter the repo; keep the sanitized example)
+.env
+.env.*
+!.env.example
+
 # Node
 node_modules/
 bun.lock
