@@ -1,16 +1,17 @@
 modelRoles:
-  plan: commandcode/claude-sonnet-5-5:auto
-  slow: commandcode/claude-sonnet-5-5:medium
-  advisor: commandcode/z-ai/glm-5.3-flash:high
-  commit: commandcode/inclusionai/ling-3.1-flash:free:auto
-  smol: commandcode/xiaomi/mimo-v2.6-pro
-  default: commandcode/deepseek/deepseek-v4.1-flash:high
-  tiny: commandcode/inclusionai/ling-3.1-flash:free
-  vision: commandcode/z-ai/glm-5.3-flash:high
+  plan: openai-codex/gpt-6.1-sol:medium
+  slow: openai-codex/gpt-6.1-sol:high
+  advisor: openai-codex/gpt-6.1-sol:low
+  commit: agent-plan/glm-5-3-flash
+  smol: agent-plan/glm-5-3-flash
+  tiny: commandcode/reflection/beam:free
+  vision: agent-plan/deepseek-v4.1-flash:low
   DeepSeek: deepseek/deepseek-flash:auto
-  task: commandcode/inclusionai/ling-3.1-flash:free:auto
+  task: commandcode/deepseek/deepseek-v4.1-flash:high
   agent-plan: agent-plan/deepseek-v4.1-flash:high
   web: web/tavily
+  memory: agent-plan/glm-5-3-flash
+  default: openai-codex/gpt-6.1-sol:low
 defaultThinkingLevel: auto
 memory:
   backend: mnemopi
@@ -91,3 +92,6 @@ retry:
 commands:
   enableClaudeUser: true
   enableOpencodeProject: true
+task:
+  disabledAgents:
+    - reviewer
