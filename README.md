@@ -101,7 +101,7 @@ cd omp-config
 | `~/.omp/agent/config.yml` | `extendedContext` | 直接复制 | 当前为 `false`；`cycleOrder` 为 `default → smol → slow → tiny` |
 | `~/.omp/agent/config.yml` | `defaultThinkingLevel` / `hideThinkingBlock` | 直接复制 | 默认思考档 `auto`；`hideThinkingBlock: true` 隐藏思考块 |
 | `~/.omp/agent/config.yml` | `images.describeForTextModels` | 直接复制 | `true`：文本模型收到图片时委托 `vision` 角色描述（见「视觉能力配置」） |
-| `~/.omp/agent/config.yml` | `retry.fallbackChains` | 直接复制 | 联网搜索失败回退链，25 项按序（见「联网搜索」） |
+| `~/.omp/agent/config.yml` | `retry.fallbackChains` | 直接复制 | 失败回退链：`web` 主链 25 项按序；另有 `smol`/`task`/`advisor` 三条各回退到 `deepseek/deepseek-flash:high`（见「联网搜索」） |
 | `~/.omp/agent/config.yml` | `commands` | 直接复制 | 命令来源开关：`enableClaudeUser`（`~/.claude/commands/`）、`enableOpencodeProject`（`.opencode/commands/`） |
 
 ### 验证
@@ -143,18 +143,21 @@ statusLine:
 
 | 角色 | 模型 | 思考档位 | 用途 |
 |------|------|----------|------|
-| `default` | commandcode/deepseek/deepseek-v4.1-flash | `high` | 默认主模型，日常编码 |
-| `plan` | commandcode/claude-sonnet-5-5 | `auto` | 任务规划阶段 |
-| `slow` | commandcode/claude-sonnet-5-5 | `medium` | 深度推理 / 复杂问题 |
-| `smol` | commandcode/xiaomi/mimo-v2.6-pro | — | 轻量快速任务 |
-| `tiny` | commandcode/inclusionai/ling-3.1-flash:free | — | 轻量后台任务（会话标题 / 记忆抽取） |
-| `commit` | commandcode/inclusionai/ling-3.1-flash:free | `auto` | 生成 commit message |
-| `task` | commandcode/inclusionai/ling-3.1-flash:free | `auto` | 任务子代理（委派多步任务） |
-| `advisor` | commandcode/z-ai/glm-5.3-flash | `high` | 顾问模式 |
-| `vision` | commandcode/z-ai/glm-5.3-flash | `high` | 视觉 / 图片理解（见「视觉能力配置」） |
+| `default` | openai-codex/gpt-6.1-sol | `low` | 默认主模型，日常编码（Codex 通道） |
+| `plan` | openai-codex/gpt-6.1-sol | `medium` | 任务规划阶段 |
+| `slow` | openai-codex/gpt-6.1-sol | `high` | 深度推理 / 复杂问题 |
+| `smol` | commandcode/deepseek/deepseek-v4.1-flash | `high` | 轻量快速任务（失败回退 `deepseek/deepseek-flash:high`） |
+| `tiny` | commandcode/reflection/beam:free | — | 轻量后台任务（会话标题等） |
+| `commit` | commandcode/reflection/beam:free | — | 生成 commit message |
+| `task` | commandcode/deepseek/deepseek-v4.1-flash | `high` | 任务子代理（委派多步任务） |
+| `advisor` | commandcode/deepseek/deepseek-v4.1-flash | `high` | 顾问模式 |
+| `vision` | agent-plan/deepseek-v4.1-flash | `low` | 视觉 / 图片理解（见「视觉能力配置」） |
 | `web` | web/tavily | — | 联网搜索主通道（失败回退链见「联网搜索」） |
-| `DeepSeek` | deepseek/deepseek-flash | `auto` | 官方 DeepSeek API（omp 内置 provider，配 Key 后启用；备用，不在 `cycleOrder` 中） |
+| `memory` | deepseek/deepseek-flash | `low` | 记忆事实抽取 / 整理（官方 DeepSeek API） |
+| `DeepSeek` | deepseek/deepseek-flash | `high` | 官方 DeepSeek API 备用通道（不在 `cycleOrder` 中） |
 | `agent-plan` | agent-plan/deepseek-v4.1-flash | `high` | 火山方舟 Agent Plan 通道（订阅制，1M 上下文） |
+
+角色写法是 `provider/model:思考档位`。注意 `commandcode/reflection/beam:free` 里的 `:free` **属于模型名**（该模型无思考档位，与 `:low`/`:high` 这类档位后缀不同），所以 `tiny`/`commit` 的档位列是 `—`。思考档位取值以 `omp models <provider>` 的 `thinking` 列（或 `omp models ls`）为准。
 
 **思考档位循环 (`cycleOrder`)**: `default` → `smol` → `slow` → `tiny`。
 
@@ -162,6 +165,7 @@ statusLine:
 
 - **主通道**：`web` 角色 = `web/tavily`。
 - **失败回退链**（`retry.fallbackChains.web`，按序）：`web/perplexity` → `google-gemini-cli/gemini-2.5-flash` → `google-antigravity/gemini-2.5-flash` → `google/gemini-2.5-flash` → `anthropic/claude-haiku-4-5` → `openai-codex/gpt-5.6-luna` → `xai/grok-4.5` → `web/zai` → `web/exa` → `web/tinyfish` → `web/jina` → `web/kagi` → `web/firecrawl` → `web/brave` → `web/kimi` → `web/parallel` → `web/synthetic` → `web/searxng` → `web/startpage` → `web/duckduckgo` → `web/ecosia` → `web/google` → `web/mojeek` → `web/public` → `web/hosted`。
+- **角色级回退链**（`retry.fallbackChains.{smol,task,advisor}`）：三条各一项 → `deepseek/deepseek-flash:high`。commandcode 通道不可用（配额/网络）时，`smol` / `task` / `advisor` 这三类调用切到官方 DeepSeek。
 - 排序意图：先走托管搜索/通用模型（perplexity、gemini、haiku、grok），再走需要 key 或自建/公共实例的 `web/*` 提供方，最后兜底 `web/hosted`。
 - 旧写法 `providers.webSearchOrder` 已被这套取代（omp bundle 里它只是 `providers.webSearch` 的遗留别名），本配置不再保留该键。
 
@@ -174,9 +178,9 @@ statusLine:
 
 ### 视觉能力配置 (`models.yml` → `commandcode.modelOverrides`)
 
-`commandcode` 是 omp **内置 provider**。omp 内置目录把它的**全部 85 个模型都声明为 `input: [text]`**（`omp models commandcode` 显示 `images=no`），于是 `vision` 角色解析失败、图片在发送前被摘除。
+`commandcode` 是 omp **内置 provider**。本仓库用 `modelOverrides` 补两类内置目录没有的能力：① 为实测支持图片的模型声明图像输入；② 为内置 compat 目录里没有的新模型补 `reasoning_content` 回传要求（见下）。
 
-实测（直连 `api.commandcode.ai`，用带随机 token / 随机图形数量的探针图判定，能读出才算支持）确认 **36 个模型支持图片输入**，其声明已在 `models.yml` 覆盖：
+实测（直连 `api.commandcode.ai`，用带随机 token / 随机图形数量的探针图判定，能读出才算支持）确认 **36 个模型支持图片输入**，声明已并入 `models.yml`（合并后 `omp models commandcode` 列出 93 个模型、其中 65 个 `images=yes`）：
 
 ```yaml
 providers:
@@ -194,8 +198,8 @@ providers:
 
 - **两条协议线 URL 不同，但配置层无需区分**——omp 按每个模型自身的 `api` 字段选协议：`openai-completions` → `/v1/chat/completions` + `image_url` 内容块；`anthropic-messages` → `/v1/messages` + base64 image source。
 - **openai 线的能力判定是 `input 含 image` **且** `compat.stripImageInput == false`**，所以 35 个 openai 线模型两项都写；唯一的 anthropic 线模型（`claude-sonnet-5-5`）只写 `input`。
-- **回退链**：omp 视觉模型解析顺序为 `@vision → @default → 当前激活 → 第一个具备视觉的可用模型`。`vision` 角色指向 `commandcode/z-ai/glm-5.3-flash`，声明正确后 `@vision` 直接命中；文本主模型收到图片时（`images.describeForTextModels: true`）会委托该角色描述，或由模型自行 `read ?q=` 兜底。
-- **未声明的模型**（订阅不含、或实测明确拒绝图片的）：保持 text-only；遇到图片会自动回退到 `glm-5.3-flash`。
+- **回退链**：omp 视觉模型解析顺序为 `@vision → @default → 当前激活 → 第一个具备视觉的可用模型`。当前 `vision` 角色指向 `agent-plan/deepseek-v4.1-flash:low`（原生声明图像输入），所以 `@vision` 直接命中；文本主模型收到图片时（`images.describeForTextModels: true`）会委托该角色描述，或由模型自行 `read ?q=` 兜底。下面这批 `commandcode` 覆盖只在把主模型切回 commandcode 视觉模型时才起作用。
+- **未声明的 commandcode 模型**（订阅不含、或实测明确拒绝图片的）：保持 text-only；这些模型收到图片时按上面的解析顺序回退。
 - 覆盖清单 36 个：`MiniMaxAI/MiniMax-M3`、`Qwen/Qwen3.6-Plus`、`Qwen3.7-Flash/Plus`、`Qwen3.8-27B/Flash/Max/Max-0902/Omni-Flash`、`claude-sonnet-5-5`、`deepseek/deepseek-v4-flash`、`deepseek-v4-flash-vision-exp`、`deepseek-v4.1-flash(-fast)`、`google/gemini-3.7-flash`、`gemini-3.8-flash`、`gpt-5.6-luna/sol`、`gpt-6-luna`、`mistral/mistral-large-4`、`moonshotai/Kimi-K2.5/K2.6/K2.7-Code(-Highspeed)/K3`、`stepfun/Step-3.5-Flash`、`Step-5-Preview`、`xai/grok-4.5/4.6/4.7`、`xiaomi/mimo-v2.5`、`mimo-v2.6-flash/pro/pro-ultraspeed`、`z-ai/glm-5.3-flash(x)`。
 
 ### 长期记忆 (`config.yml` → `memory` / `mnemopi`)
@@ -213,7 +217,7 @@ mnemopi:
 
 - **`per-project-tagged` 优于 `per-project`**：写入项目隔离，召回还能带上全局记忆——跨项目通用经验（如方舟网关踩坑）仍可浮现。
 - **不要开 `noEmbeddings: true`**：FTS5 默认 `unicode61` tokenizer 对中文按整句切分（无分词），关掉向量召回会让中文查询只能逐字命中；`multilingual` e5 本地推理无网络依赖、无费用，是中文召回主力。
-- **`llmMode: smol`**：事实抽取/整理走轻量 `tiny`→`smol` 角色（commandcode 轻量模型），不占用主模型额度。
+- **`llmMode: smol`**：事实抽取/整理走 `tiny` / `smol` 档角色（现为 `commandcode/reflection/beam:free` 与 `commandcode/deepseek/deepseek-v4.1-flash:high`），不占用主模型额度；commandcode 不可用时按 `retry.fallbackChains.smol` 回退 `deepseek/deepseek-flash:high`。
 - **consolidation 需手动触发**：正常退出只做轻量 drain，working → episodic 晋级与图谱构建仅在 `/memory enqueue` 时发生（且只整理 >12h 的行）；重要会话结束前跑一次。
 - **进阶开关保持关闭**：`polyphonicRecall` 的 graph voice 依赖 consolidation 产生的 `gists`/`graph_edges`（未触发时恒为空）；`proactiveLinking` 的实体抽取为英文偏置正则，中文收益微弱。
 
@@ -261,18 +265,23 @@ pwsh -File "$d\install.ps1" --skip-config
 
 图片生成 Skill（`~/.omp/agent/skills/byted-ark-seedream-skill/`）：豆包 Seedream 生图（Agent Plan 专属版），支持文生图/图生图/连贯组图/联网搜索；API Key 走 `~/.omp/agent/.env` 的 `ARK_SEEDREAM_API_KEY`，图片默认存启动目录 `Seedream-Images/`（已加入 `.gitignore`）。
 
+OpenAI Codex（`openai-codex` provider，omp **内置**）：
+- `default` / `plan` / `slow` 角色指向 `openai-codex/gpt-6.1-sol`（思考档依次 `low` / `medium` / `high`）；272K 上下文、128K 输出、支持图片。
+- **无需 `apiKey`/`baseUrl`**：OAuth 登录（`omp login openai-codex`），凭据存 omp 凭据库（`agent.db`）。
+- 不在 `models.yml` 中声明；要改价/上下文，用 `providers.openai-codex.modelOverrides` 覆盖内置值。
+
 智谱 GLM（`zhipu` provider，智谱开放平台，OpenAI 兼容）：
 - **glm-5.3-flash** — `Zhipu` 角色备用；多模态（文本+图像），1M 上下文，131K 输出上限，`reasoning`（思考档位 `low/high/max`，默认 `max`）
 - `baseUrl: https://open.bigmodel.cn/api/paas/v4`，请求自动落到 `/chat/completions`；`open.bigmodel.cn` 主机会被自动识别为智谱，走 `zai` thinking 方言（`thinking.type: enabled` + `reasoning_effort`，工具调用时自动开启 `tool_stream`）
 - 价格（元/百万 tokens）：输入 **0.8**、输出 **2.8**、缓存命中 **0.23**、缓存写入 **0.8**。`models.yml` `cost` 块**直接写人民币价**（master 状态栏不显示 cost，此价格供 API 记账/其他工具使用）。
 
 Command Code（`commandcode` provider，omp **内置**，订阅制网关）：
-- 默认主通道：`default` / `plan` / `slow` / `smol` / `tiny` / `commit` / `task` / `advisor` / `vision` 角色均指向此 provider 的模型
+- 角色占用：`smol` / `task` / `advisor` 及轻量档 `tiny` / `commit` 指向此 provider 的模型（`default` / `plan` / `slow` 走 `openai-codex`，`vision` 走 `agent-plan`）
 - **无需 `apiKey`/`baseUrl`**：由 omp 内置定义，登录凭证存于 omp 凭据库（`agent.db`）
-- `models.yml` 只用 `modelOverrides` 覆盖：`inclusionai/ling-3.1-flash:free` 的上下文/输出上限，以及 36 个支持视觉的模型的 `input` 能力（见「视觉能力配置」）
+- `models.yml` 只用 `modelOverrides` 覆盖，共 39 条：36 个模型的图像输入声明、`reflection/beam:free` + `stealth/cat-jam:free` 的 `reasoning_content` 回传要求、`inclusionai/ling-3.1-flash:free` 的上下文/输出上限（见「视觉能力配置」）
 - 计费与额度由订阅计划决定；`MODEL_NOT_IN_PLAN`（403）表示当前订阅未包含该模型
 
-> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色指向**官方 DeepSeek API**。该 provider（`api.deepseek.com`）由 **omp 内置**，`models.yml` 中仅需一个 `deepseek:` 块写 `modelOverrides` 覆盖内置美元价为本项目的人民币价（见 `agent/models.yml`）。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。`deepseek-flash` 由官方 `/v1/models` 动态发现，价格靠 `modelOverrides` 固定，官方降价时改 `models.yml` 即可。
+> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色与 `memory` 角色都指向**官方 DeepSeek API**（`:high` 备用对话通道 / `:low` 记忆抽取）。该 provider（`api.deepseek.com`）由 **omp 内置**，`models.yml` 中仅需一个 `deepseek:` 块写 `modelOverrides` 覆盖内置美元价为本项目的人民币价（见 `agent/models.yml`）。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。`deepseek-flash` 由官方 `/v1/models` 动态发现，价格靠 `modelOverrides` 固定，官方降价时改 `models.yml` 即可。
 
 ### 新增模型提供商节点（`models.yml`）
 

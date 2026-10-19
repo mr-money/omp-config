@@ -25,7 +25,7 @@
 - models.yml `modelOverrides.*.reasoning`（仓库独有声明，不回退本机）
 
 ## 测试
-`bun test ./scripts/config-sync.test.ts` — 23 个端到端测试（临时仓库 + 临时 USERPROFILE，真实子进程执行 PS 入口与 helper；PS5.1 参数解析、回滚注入、漂移拒绝均覆盖）。
+`bun test ./scripts/config-sync.test.ts` — 24 个端到端测试（临时仓库 + 临时 USERPROFILE，真实子进程执行 PS 入口与 helper；PS5.1 参数解析、回滚注入、漂移拒绝、结构化序列化尾随空白均覆盖）。
 
 ## 日常次序（多机）
 1. 本机改配置后：`sync-from-live.ps1 -Check` → `-Export` → 人工审查 → 只 stage 受管配置 → commit
