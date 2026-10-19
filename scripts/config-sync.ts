@@ -456,7 +456,11 @@ function stripConfigKeys(value: Record<string, unknown>): Record<string, unknown
 }
 
 function serializeStructured(rel: string, value: Record<string, unknown>): string {
-  const text = isYamlRel(rel) ? Bun.YAML.stringify(value, null, 2) : JSON.stringify(value, null, 2) + "\n";
+  // Bun.YAML.stringify (Bun 1.3.x) 给每个带块级子项的键加尾随空格（`key: ` 后换行）。剥掉行尾空白，
+  // 否则每次导出/部署都在仓库或本机留下纯空白 churn；结构化比较按解析值哈希，不受空白影响。
+  const text = isYamlRel(rel)
+    ? Bun.YAML.stringify(value, null, 2).replace(/[ \t]+$/gm, "")
+    : JSON.stringify(value, null, 2) + "\n";
   return text.endsWith("\n") ? text : text + "\n";
 }
 
@@ -1018,7 +1022,7 @@ function opDeployModels(repoRoot: string, home: string, output: string): void {
     console.log(`  provider ${name}: apiKey kept (source: ${source === "live" ? "live value" : `env ${DEPLOY_ENV_BY_PROVIDER[name]}`})`);
   }
 
-  const content = Bun.YAML.stringify(out, null, 2);
+  const content = serializeStructured("agent/models.yml", out);
   writeBatch([{ targetAbs: resolve(output), rel: "agent/models.yml", content, originalRaw: existsSync(output) ? readFileSync(output) : null, backupDir: null }]);
   console.log(`models.yml deployed: ${output}`);
   if (unfilled.length > 0) {
@@ -1043,7 +1047,7 @@ function opSetShell(repoRoot: string, home: string, file: string, shell: string 
   }
   if (shell === null) delete parsed.shellPath;
   else parsed.shellPath = shell;
-  const content = Bun.YAML.stringify(parsed, null, 2);
+  const content = serializeStructured("agent/config.yml", parsed);
   writeBatch([{ targetAbs: abs, rel: "agent/config.yml", content, originalRaw: readFileSync(abs), backupDir: null }]);
   console.log(shell === null ? "removed config.yml shellPath (omp falls back to default shell)" : `wrote config.yml shellPath: ${shell}`);
 }

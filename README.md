@@ -251,6 +251,15 @@ pwsh -File "$d\install.ps1" --skip-config
 - 卸载：`codebase-memory-mcp uninstall -y --delete-indexes`（连索引一起删）；omp 侧删掉 `mcp.json` 里的条目、`agent/agents/codebase-memory*.md`、`skills/codebase-memory/`。
 - CBM 自带的 `install --clients=omp -y` 会重写 `~/.omp/agent/mcp.json`（写成它解析出的绝对路径），与本仓库 setup 探测的产物等价，两者可混用。
 
+### 浏览器操控 (`skills/chrome-cdp-attach`)
+
+驱动用户**已登录**的真实 Chrome（百度轻舸/投放后台、内部看板等），按 Profile 区分登录态，无逐次授权弹窗：
+
+- 前置：`omp browser-relay install` 写出扩展 → 在 **Chrome** 的 `chrome://extensions` 开发者模式手动加载 `~/.omp/browser-relay/extension`（无法脚本化）→ `omp config set browser.relay true`（**仓库 `agent/config.yml` 已开启**）。扩展文件由 omp 版本生成，不入仓。
+- 用法：`browser.open({ name, app: { relay: true, target: "<URL/标题子串>" } })`；不带 `target` 采用当前可见标签页，此时**再传 `url` 会把它导航走**。健康检查：`curl http://127.0.0.1:9224/json/version`（200=扩展在线，503=等服务/等扩展，连接被拒=relay 未起，下次浏览器调用自动拉起）。
+- 硬规则：默认只读（不点保存/删除/发布、不 navigate 用户可见标签页、不读 Cookie/Token）；relay 会话就是用户真实浏览器，动作记在用户账号下。
+- 备用路线（未装扩展时）：直连 CDP over WebSocket——Chrome 136+ 对默认 user-data-dir 加固后 `/json/version` 返回 404，裸 WS 握手仍可用，但每次连接需点一次「要允许远程调试吗」。
+
 ### 模型提供商 (`models.yml`)
 
 火山方舟 Agent Plan（`agent-plan` provider，订阅制，OpenAI 兼容）：

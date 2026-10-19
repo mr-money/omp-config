@@ -222,6 +222,14 @@ describe("export: merges live into repo, keeps repo-only, second check clean", (
     expect(gitHead(fx)).toBe(beforeHead); // 不 commit
     expect(gitStatus(fx)).toContain("agent/models.yml");
   });
+  test("exported YAML carries no trailing whitespace", () => {
+    // Bun.YAML.stringify(Bun 1.3.x) 会给嵌套映射/序列的键加尾随空格（"key: "），
+    // 结构化导出必须把它剥掉，否则每次导出都在仓库留下一片空白 churn。
+    for (const rel of ["agent/config.yml", "agent/models.yml"]) {
+      const text = readFileSync(join(fx.repoDir, ...rel.split("/")), "utf8");
+      expect(text.split("\n").filter((line) => /[ \t]+$/.test(line))).toEqual([]);
+    }
+  });
   test("baseline recorded", () => {
     expect(existsSync(join(fx.ompDir, "config-sync", "state.json"))).toBe(true);
   });

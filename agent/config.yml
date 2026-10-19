@@ -1,16 +1,16 @@
 modelRoles:
   plan: openai-codex/gpt-6.1-sol:medium
   slow: openai-codex/gpt-6.1-sol:high
-  advisor: openai-codex/gpt-6.1-sol:low
-  commit: agent-plan/glm-5-3-flash
-  smol: volcengine-coding/glm-5-3-flash
+  advisor: commandcode/deepseek/deepseek-v4.1-flash:high
+  commit: commandcode/reflection/beam:free
+  smol: commandcode/deepseek/deepseek-v4.1-flash:high
   tiny: commandcode/reflection/beam:free
   vision: agent-plan/deepseek-v4.1-flash:low
-  DeepSeek: deepseek/deepseek-flash:auto
+  DeepSeek: deepseek/deepseek-flash:high
   task: commandcode/deepseek/deepseek-v4.1-flash:high
   agent-plan: agent-plan/deepseek-v4.1-flash:high
   web: web/tavily
-  memory: agent-plan/glm-5-3-flash
+  memory: deepseek/deepseek-flash:low
   default: openai-codex/gpt-6.1-sol:low
 defaultThinkingLevel: auto
 memory:
@@ -89,9 +89,17 @@ retry:
       - web/mojeek
       - web/public
       - web/hosted
+    smol:
+      - deepseek/deepseek-flash:high
+    task:
+      - deepseek/deepseek-flash:high
+    advisor:
+      - deepseek/deepseek-flash:high
 commands:
   enableClaudeUser: true
   enableOpencodeProject: true
 task:
   disabledAgents:
     - reviewer
+browser:
+  relay: true

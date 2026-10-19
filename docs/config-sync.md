@@ -34,4 +34,5 @@
 
 ## 已知取舍
 - models.yml 结构化重写会丢弃 YAML 注释（Bun.YAML.stringify）；语义未变的文件不重写
+- 结构化序列化会剥离行尾空白（Bun 1.3.x 的 `Bun.YAML.stringify` 会给带块级子项的键加尾随空格），导出/部署不再产生纯空白 churn；比较按解析值哈希，不受空白影响
 - `pelican_bike.html` 等未跟踪文件与同步无关，永不触碰
