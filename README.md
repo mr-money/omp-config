@@ -253,7 +253,7 @@ pwsh -File "$d\install.ps1" --skip-config
 
 ### 浏览器操控 (`skills/chrome-cdp-attach`)
 
-驱动用户**已登录**的真实 Chrome（百度轻舸/投放后台、内部看板等），按 Profile 区分登录态，无逐次授权弹窗：
+驱动用户**已登录**的真实 Chrome（投放后台、内部看板等任意已登录站点），按 Profile 区分登录态，无逐次授权弹窗：
 
 - 前置：`omp browser-relay install` 写出扩展 → 在 **Chrome** 的 `chrome://extensions` 开发者模式手动加载 `~/.omp/browser-relay/extension`（无法脚本化）→ `omp config set browser.relay true`（**仓库 `agent/config.yml` 已开启**）。扩展文件由 omp 版本生成，不入仓。
 - 用法：`browser.open({ name, app: { relay: true, target: "<URL/标题子串>" } })`；不带 `target` 采用当前可见标签页，此时**再传 `url` 会把它导航走**。健康检查：`curl http://127.0.0.1:9224/json/version`（200=扩展在线，503=等服务/等扩展，连接被拒=relay 未起，下次浏览器调用自动拉起）。
