@@ -281,7 +281,7 @@ Command Code（`commandcode` provider，omp **内置**，订阅制网关）：
 - `models.yml` 只用 `modelOverrides` 覆盖，共 39 条：36 个模型的图像输入声明、`reflection/beam:free` + `stealth/cat-jam:free` 的 `reasoning_content` 回传要求、`inclusionai/ling-3.1-flash:free` 的上下文/输出上限（见「视觉能力配置」）
 - 计费与额度由订阅计划决定；`MODEL_NOT_IN_PLAN`（403）表示当前订阅未包含该模型
 
-> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色与 `memory` 角色都指向**官方 DeepSeek API**（`:high` 备用对话通道 / `:low` 记忆抽取）。该 provider（`api.deepseek.com`）由 **omp 内置**，`models.yml` 中仅需一个 `deepseek:` 块写 `modelOverrides` 覆盖内置美元价为本项目的人民币价（见 `agent/models.yml`）。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。`deepseek-flash` 由官方 `/v1/models` 动态发现，价格靠 `modelOverrides` 固定，官方降价时改 `models.yml` 即可。
+> **DeepSeek 官方通道（`deepseek` provider）**：`config.yml` 的 `DeepSeek` 角色与 `memory` 角色都指向**官方 DeepSeek API**（`:high` 备用对话通道 / `:low` 记忆抽取）。该 provider（`api.deepseek.com`）由 **omp 内置**，`models.yml` 中**不写** `deepseek:` 节点——价格与能力全部采用 omp 内置定义。使用前只需在 omp 设置（`/models`）中为 `deepseek` 填入官方 API Key 即可启用。`deepseek-flash` 由官方 `/v1/models` 动态发现；如需改价或改上下文，再按「内置 provider 覆盖」加回 `providers.deepseek.modelOverrides`。
 
 ### 新增模型提供商节点（`models.yml`）
 
