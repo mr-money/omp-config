@@ -6,7 +6,7 @@
 - 本机侧映射：`agent/*` → `~/.omp/agent/*`；`skills/*` → `~/.omp/agent/skills/*`（helper `sideAbs()`）
 
 ## 默认浏览器
-- `agent/config.yml` pins `ego-browser` through `skills.includeSkills`, so OMP always loads its instructions and prefers ego-browser for browser tasks.
+- `skills/ego-browser/SKILL.md` recommends ego-browser for browser tasks; it is deployed from `skills/**`. Keep `skills.includeSkills` unset so this preference does not filter other skills from OMP discovery.
 - `browser.relay: true` retains OMP's native browser relay as an available capability; it does not automatically route browser tasks to ego-browser.
 - The skill lives at `skills/ego-browser/` and `setup.ps1` deploys it under `~/.omp/agent/skills/ego-browser/`; ego lite itself and its local browser profile/login must be installed on each computer separately.
 

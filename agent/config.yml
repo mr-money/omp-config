@@ -103,6 +103,3 @@ task:
     - reviewer
 browser:
   relay: true
-skills:
-  includeSkills:
-    - ego-browser
