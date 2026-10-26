@@ -91,15 +91,15 @@ cd omp-config
 
 | 文件 | 字段 | 部署方式 | 说明 |
 |------|------|----------|------|
-| `~/.omp/agent/models.yml` | `apiKey` | 环境变量注入 / 本地手动编辑 | 各 provider 的 key：Agent Plan `OMP_AGENT_PLAN_KEY`、智谱 `ZHIPU_API_KEY`。setup **不再交互**——设了环境变量就自动写入，没设则保留 `<...>` 占位符；重部署按 provider 保留本地已填真实 key，结尾列出未填项 |
+| `~/.omp/agent/models.yml` | `apiKey` | 环境变量注入 / 本地手动编辑 | Agent Plan：`OMP_AGENT_PLAN_KEY`；智谱：`ZHIPU_API_KEY`；Volcengine Coding (`volcengine-coding`) 的 key 需在本机手动填写。setup 不交互；未配置时保留 `<...>` 占位符，重部署保留本机已填 key |
 | `~/.omp/agent/lsp.json` | `servers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`gopls` / `python -m pylsp`）；探测到绝对路径则写回 |
 | `~/.omp/agent/mcp.json` | `mcpServers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`codebase-memory-mcp`）；探测到绝对路径则写回。二进制需每台机器单独装，见「代码知识图谱 MCP」一节 |
 | `~/.omp/agent/agents/` | — | 直接复制 | 子代理定义（`codebase-memory` 三档）；omp 通过 `task` 的 `agent` 字段调用 |
 | `~/.omp/agent/config.yml` | `shellPath` | setup 探测写入 | 检测到 pwsh 则自动写入；未检测到则省略（omp 回退到 cmd.exe） |
 | `~/.omp/agent/config.yml` | `statusLine` | 直接复制 | 自定义状态栏：custom 段列表（无 cost 段）、git 只显分支名、path 缩写、模型名带思考档位 |
 | `~/.omp/agent/settings.json` | — | 直接复制 | 不再单独设 shellPath，统一走 config.yml |
-| `~/.omp/agent/config.yml` | `extendedContext` | 直接复制 | 当前为 `false`；`cycleOrder` 为 `default → smol → slow → tiny` |
-| `~/.omp/agent/config.yml` | `defaultThinkingLevel` / `hideThinkingBlock` | 直接复制 | 默认思考档 `auto`；`hideThinkingBlock: true` 隐藏思考块 |
+| `~/.omp/agent/config.yml` | `extendedContext` | 直接复制 | 当前为 `false`；`cycleOrder` 为 `default → smol → slow → agent-plan` |
+| `~/.omp/agent/config.yml` | `defaultThinkingLevel` / `hideThinkingBlock` | 直接复制 | 默认思考档 `auto`；`hideThinkingBlock: false`，不会隐藏模型返回的思考块 |
 | `~/.omp/agent/config.yml` | `images.describeForTextModels` | 直接复制 | `true`：文本模型收到图片时委托 `vision` 角色描述（见「视觉能力配置」） |
 | `~/.omp/agent/config.yml` | `retry.fallbackChains` | 直接复制 | 失败回退链：`web` 主链 25 项按序；另有 `smol`/`task`/`advisor` 三条各回退到 `deepseek/deepseek-flash:high`（见「联网搜索」） |
 | `~/.omp/agent/config.yml` | `commands` | 直接复制 | 命令来源开关：`enableClaudeUser`（`~/.claude/commands/`）、`enableOpencodeProject`（`.opencode/commands/`） |
@@ -143,29 +143,29 @@ statusLine:
 
 | 角色 | 模型 | 思考档位 | 用途 |
 |------|------|----------|------|
-| `default` | openai-codex/gpt-6.1-sol | `low` | 默认主模型，日常编码（Codex 通道） |
+| `default` | openai-codex/gpt-6-luna | `high` | 默认主模型，日常编码（Codex 通道） |
 | `plan` | openai-codex/gpt-6.1-sol | `medium` | 任务规划阶段 |
-| `slow` | openai-codex/gpt-6.1-sol | `high` | 深度推理 / 复杂问题 |
-| `smol` | commandcode/deepseek/deepseek-v4.1-flash | `high` | 轻量快速任务（失败回退 `deepseek/deepseek-flash:high`） |
-| `tiny` | commandcode/reflection/beam:free | — | 轻量后台任务（会话标题等） |
-| `commit` | commandcode/reflection/beam:free | — | 生成 commit message |
-| `task` | commandcode/deepseek/deepseek-v4.1-flash | `high` | 任务子代理（委派多步任务） |
-| `advisor` | commandcode/deepseek/deepseek-v4.1-flash | `high` | 顾问模式 |
+| `slow` | openai-codex/gpt-6.1-sol | `medium` | 深度推理 / 复杂问题 |
+| `smol` | agent-plan/glm-5-3-flash | — | 轻量快速任务（失败回退 `deepseek/deepseek-flash:high`） |
+| `tiny` | commandcode/minimax/minimax-m3.1-flash | — | 轻量后台任务（会话标题等） |
+| `commit` | openai-codex/gpt-6-luna | `off` | 生成 commit message |
+| `task` | openai-codex/gpt-6-luna | `medium` | 任务子代理（委派多步任务） |
+| `advisor` | deepseek/deepseek-flash | `low` | 顾问模式 |
 | `vision` | agent-plan/deepseek-v4.1-flash | `low` | 视觉 / 图片理解（见「视觉能力配置」） |
 | `web` | web/tavily | — | 联网搜索主通道（失败回退链见「联网搜索」） |
 | `memory` | deepseek/deepseek-flash | `low` | 记忆事实抽取 / 整理（官方 DeepSeek API） |
 | `DeepSeek` | deepseek/deepseek-flash | `high` | 官方 DeepSeek API 备用通道（不在 `cycleOrder` 中） |
 | `agent-plan` | agent-plan/deepseek-v4.1-flash | `high` | 火山方舟 Agent Plan 通道（订阅制，1M 上下文） |
 
-角色写法是 `provider/model:思考档位`。注意 `commandcode/reflection/beam:free` 里的 `:free` **属于模型名**（该模型无思考档位，与 `:low`/`:high` 这类档位后缀不同），所以 `tiny`/`commit` 的档位列是 `—`。思考档位取值以 `omp models <provider>` 的 `thinking` 列（或 `omp models ls`）为准。
+角色写法是 `provider/model:思考档位`。OMP 的 commandcode 模型目录只列出无思考档位的 `minimax/minimax-m3.1-flash`；旧 `tiny` 值的 `:free` 会被当作无效思考档位，因此已移除。`commit` 显式关闭思考（`off`）。思考档位取值以 `omp models <provider>` 的 `thinking` 列（或 `omp models ls`）为准。
 
-**思考档位循环 (`cycleOrder`)**: `default` → `smol` → `slow` → `tiny`。
+**思考档位循环 (`cycleOrder`)**: `default` → `smol` → `slow` → `agent-plan`。
 
 ### 联网搜索 (`config.yml` → `modelRoles.web` + `retry.fallbackChains.web`)
 
 - **主通道**：`web` 角色 = `web/tavily`。
 - **失败回退链**（`retry.fallbackChains.web`，按序）：`web/perplexity` → `google-gemini-cli/gemini-2.5-flash` → `google-antigravity/gemini-2.5-flash` → `google/gemini-2.5-flash` → `anthropic/claude-haiku-4-5` → `openai-codex/gpt-5.6-luna` → `xai/grok-4.5` → `web/zai` → `web/exa` → `web/tinyfish` → `web/jina` → `web/kagi` → `web/firecrawl` → `web/brave` → `web/kimi` → `web/parallel` → `web/synthetic` → `web/searxng` → `web/startpage` → `web/duckduckgo` → `web/ecosia` → `web/google` → `web/mojeek` → `web/public` → `web/hosted`。
-- **角色级回退链**（`retry.fallbackChains.{smol,task,advisor}`）：三条各一项 → `deepseek/deepseek-flash:high`。commandcode 通道不可用（配额/网络）时，`smol` / `task` / `advisor` 这三类调用切到官方 DeepSeek。
+- **角色级回退链**（`retry.fallbackChains.{smol,task,advisor}`）：三条各一项 → `deepseek/deepseek-flash:high`。各自配置的主模型不可用时，回退到官方 DeepSeek。
 - 排序意图：先走托管搜索/通用模型（perplexity、gemini、haiku、grok），再走需要 key 或自建/公共实例的 `web/*` 提供方，最后兜底 `web/hosted`。
 - 旧写法 `providers.webSearchOrder` 已被这套取代（omp bundle 里它只是 `providers.webSearch` 的遗留别名），本配置不再保留该键。
 
@@ -217,7 +217,7 @@ mnemopi:
 
 - **`per-project-tagged` 优于 `per-project`**：写入项目隔离，召回还能带上全局记忆——跨项目通用经验（如方舟网关踩坑）仍可浮现。
 - **不要开 `noEmbeddings: true`**：FTS5 默认 `unicode61` tokenizer 对中文按整句切分（无分词），关掉向量召回会让中文查询只能逐字命中；`multilingual` e5 本地推理无网络依赖、无费用，是中文召回主力。
-- **`llmMode: smol`**：事实抽取/整理走 `tiny` / `smol` 档角色（现为 `commandcode/reflection/beam:free` 与 `commandcode/deepseek/deepseek-v4.1-flash:high`），不占用主模型额度；commandcode 不可用时按 `retry.fallbackChains.smol` 回退 `deepseek/deepseek-flash:high`。
+- **记忆角色**：当前 `modelRoles.memory` 指向 `deepseek/deepseek-flash:low`（官方 DeepSeek）；它是独立角色，不与 `tiny` / `smol` 混用。
 - **consolidation 需手动触发**：正常退出只做轻量 drain，working → episodic 晋级与图谱构建仅在 `/memory enqueue` 时发生（且只整理 >12h 的行）；重要会话结束前跑一次。
 - **进阶开关保持关闭**：`polyphonicRecall` 的 graph voice 依赖 consolidation 产生的 `gists`/`graph_edges`（未触发时恒为空）；`proactiveLinking` 的实体抽取为英文偏置正则，中文收益微弱。
 
@@ -257,6 +257,10 @@ pwsh -File "$d\install.ps1" --skip-config
 
 ### 模型提供商 (`models.yml`)
 
+火山方舟 Coding API（`volcengine-coding` provider，OpenAI 兼容）：
+- **deepseek-v4-1-flash-26101** — DeepSeek V4.1 Flash (ark)，文本+图像，1,024K 上下文、65K 输出。
+- `baseUrl: https://ark.cn-beijing.volces.com/api/coding/v3`；仓库保留 `<VOLCENGINE_CODING_API_KEY>` 占位符，新机器需在本机填写。
+
 火山方舟 Agent Plan（`agent-plan` provider，订阅制，OpenAI 兼容）：
 - **deepseek-v4.1-flash** — Agent Plan 通道 DeepSeek V4.1 Flash（1M 上下文，多模态文本+图像，393K 输出，`reasoning`）
 - **glm-5-3-flash** — Agent Plan 通道 GLM 5.3 Flash（多模态文本+图像，1M 上下文）
@@ -266,17 +270,17 @@ pwsh -File "$d\install.ps1" --skip-config
 图片生成 Skill（`~/.omp/agent/skills/byted-ark-seedream-skill/`）：豆包 Seedream 生图（Agent Plan 专属版），支持文生图/图生图/连贯组图/联网搜索；API Key 走 `~/.omp/agent/.env` 的 `ARK_SEEDREAM_API_KEY`，图片默认存启动目录 `Seedream-Images/`（已加入 `.gitignore`）。
 
 OpenAI Codex（`openai-codex` provider，omp **内置**）：
-- `default` / `plan` / `slow` 角色指向 `openai-codex/gpt-6.1-sol`（思考档依次 `low` / `medium` / `high`）；272K 上下文、128K 输出、支持图片。
+- 角色分配：`default` = `gpt-6-luna:high`，`task` = `gpt-6-luna:medium`，`commit` = `gpt-6-luna:off`；`plan` / `slow` = `gpt-6.1-sol:medium`。
 - **无需 `apiKey`/`baseUrl`**：OAuth 登录（`omp login openai-codex`），凭据存 omp 凭据库（`agent.db`）。
 - 不在 `models.yml` 中声明；要改价/上下文，用 `providers.openai-codex.modelOverrides` 覆盖内置值。
 
 智谱 GLM（`zhipu` provider，智谱开放平台，OpenAI 兼容）：
-- **glm-5.3-flash** — `Zhipu` 角色备用；多模态（文本+图像），1M 上下文，131K 输出上限，`reasoning`（思考档位 `low/high/max`，默认 `max`）
+- **glm-5.3-flash** — 智谱 provider 中可显式选择的模型；当前未分配到 `modelRoles`。多模态（文本+图像），1M 上下文，131K 输出上限，`reasoning`（思考档位 `low/high/max`，默认 `max`）。
 - `baseUrl: https://open.bigmodel.cn/api/paas/v4`，请求自动落到 `/chat/completions`；`open.bigmodel.cn` 主机会被自动识别为智谱，走 `zai` thinking 方言（`thinking.type: enabled` + `reasoning_effort`，工具调用时自动开启 `tool_stream`）
 - 价格（元/百万 tokens）：输入 **0.8**、输出 **2.8**、缓存命中 **0.23**、缓存写入 **0.8**。`models.yml` `cost` 块**直接写人民币价**（master 状态栏不显示 cost，此价格供 API 记账/其他工具使用）。
 
 Command Code（`commandcode` provider，omp **内置**，订阅制网关）：
-- 角色占用：`smol` / `task` / `advisor` 及轻量档 `tiny` / `commit` 指向此 provider 的模型（`default` / `plan` / `slow` 走 `openai-codex`，`vision` 走 `agent-plan`）
+- 当前角色中仅 `tiny` 使用 Command Code：`commandcode/minimax/minimax-m3.1-flash`。
 - **无需 `apiKey`/`baseUrl`**：由 omp 内置定义，登录凭证存于 omp 凭据库（`agent.db`）
 - `models.yml` 只用 `modelOverrides` 覆盖，共 39 条：36 个模型的图像输入声明、`reflection/beam:free` + `stealth/cat-jam:free` 的 `reasoning_content` 回传要求、`inclusionai/ling-3.1-flash:free` 的上下文/输出上限（见「视觉能力配置」）
 - 计费与额度由订阅计划决定；`MODEL_NOT_IN_PLAN`（403）表示当前订阅未包含该模型

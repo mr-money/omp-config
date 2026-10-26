@@ -1,17 +1,17 @@
 modelRoles:
   plan: openai-codex/gpt-6.1-sol:medium
-  slow: openai-codex/gpt-6.1-sol:high
-  advisor: commandcode/deepseek/deepseek-v4.1-flash:high
-  commit: commandcode/reflection/beam:free
-  smol: commandcode/deepseek/deepseek-v4.1-flash:high
-  tiny: commandcode/reflection/beam:free
+  slow: openai-codex/gpt-6.1-sol:medium
+  advisor: deepseek/deepseek-flash:low
+  commit: openai-codex/gpt-6-luna:off
+  smol: agent-plan/glm-5-3-flash
+  tiny: commandcode/minimax/minimax-m3.1-flash
   vision: agent-plan/deepseek-v4.1-flash:low
   DeepSeek: deepseek/deepseek-flash:high
-  task: commandcode/deepseek/deepseek-v4.1-flash:high
+  task: openai-codex/gpt-6-luna:medium
   agent-plan: agent-plan/deepseek-v4.1-flash:high
   web: web/tavily
   memory: deepseek/deepseek-flash:low
-  default: openai-codex/gpt-6.1-sol:low
+  default: openai-codex/gpt-6-luna:high
 defaultThinkingLevel: auto
 memory:
   backend: mnemopi
@@ -19,12 +19,12 @@ mnemopi:
   scoping: per-project-tagged
   embeddingVariant: multilingual
   recallLimit: 10
-hideThinkingBlock: true
+hideThinkingBlock: false
 cycleOrder:
   - default
   - smol
   - slow
-  - tiny
+  - agent-plan
 statusLine:
   preset: custom
   leftSegments:

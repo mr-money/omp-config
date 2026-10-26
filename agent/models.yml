@@ -2,12 +2,14 @@ providers:
   volcengine-coding:
     baseUrl: https://ark.cn-beijing.volces.com/api/coding/v3
     api: openai-completions
-    apiKey: <VOLCENGINE_CODING_API_KEY>  # 替换为火山引擎 API Key
+    apiKey: "<VOLCENGINE_CODING_API_KEY>"
     authHeader: true
     models:
-      - id: glm-5-3-flash
-        name: GLM 5.3 Flash(ark)
-        input: [text, image]
+      - id: deepseek-v4-1-flash-26101
+        name: DeepSeek V4.1 Flash(ark)
+        input:
+          - text
+          - image
         contextWindow: 1024000
         maxTokens: 65536
         compat:
@@ -16,12 +18,14 @@ providers:
   agent-plan:
     baseUrl: https://ark.cn-beijing.volces.com/api/plan/v3
     api: openai-completions
-    apiKey: <ARK_API_KEY>  # 替换为 Agent Plan API Key
+    apiKey: "<ARK_API_KEY>"
     authHeader: true
     models:
       - id: deepseek-v4.1-flash
         name: DeepSeek V4.1 Flash (Agent Plan)
-        input: [text, image]
+        input:
+          - text
+          - image
         contextWindow: 1048576
         maxTokens: 393216
         reasoning: true
@@ -30,7 +34,9 @@ providers:
           maxTokensField: max_tokens
       - id: glm-5-3-flash
         name: GLM 5.3 Flash (Agent Plan)
-        input: [text, image]
+        input:
+          - text
+          - image
         contextWindow: 1024000
         maxTokens: 65536
         compat:
@@ -38,7 +44,8 @@ providers:
           maxTokensField: max_tokens
       - id: glm-5.3
         name: GLM-5.3(Agent Plan)
-        input: [text]
+        input:
+          - text
         contextWindow: 1024000
         maxTokens: 65536
         compat:
@@ -47,12 +54,14 @@ providers:
   zhipu:
     baseUrl: https://open.bigmodel.cn/api/paas/v4
     api: openai-completions
-    apiKey: <ZHIPU_API_KEY>  # 替换为智谱 GLM API Key
+    apiKey: "<ZHIPU_API_KEY>"
     authHeader: true
     models:
       - id: glm-5.3-flash
         name: GLM 5.3 Flash
-        input: [text, image]
+        input:
+          - text
+          - image
         contextWindow: 1048576
         maxTokens: 131072
         reasoning: true
@@ -64,173 +73,237 @@ providers:
         compat:
           supportsDeveloperRole: false
           maxTokensField: max_tokens
-
   commandcode:
-    # omp 内置 commandcode 目录把全部模型声明为 input:[text]（omp models 显示 images=no），
-    # 以下为实测（随机 token 探针图 ×2~4 次，能读出图中文字即判为支持）确认支持图片的模型。
-    # openai-completions 线必须同时声明 input 与 compat.stripImageInput:false；
-    # 否则 omp 的能力判定 _Te() 仍返回 false，图片会被摘除。
     modelOverrides:
-      # reflection/beam 与 stealth/cat-jam 不在内置 compat 目录（command-code@1.67.0 之后新增），
-      # 多轮对话要求回传 reasoning_content：实测拒绝 ""/省略，接受 "." 占位（2026-10-17）。
-      "reflection/beam:free":
+      reflection/beam:free:
         reasoning: true
         compat:
           requiresReasoningContentForToolCalls: true
           requiresReasoningContentForAllAssistantTurns: true
           allowsSyntheticReasoningContentForToolCalls: false
           syntheticReasoningContentFallback: "."
-      "stealth/cat-jam:free":
+      stealth/cat-jam:free:
         reasoning: true
         compat:
           requiresReasoningContentForToolCalls: true
           requiresReasoningContentForAllAssistantTurns: true
           allowsSyntheticReasoningContentForToolCalls: false
           syntheticReasoningContentFallback: "."
-      "inclusionai/ling-3.1-flash:free":
+      inclusionai/ling-3.1-flash:free:
         contextWindow: 262144
         maxTokens: 32768
-      # --- 以下 36 个模型实测支持视觉 ---
-      "MiniMaxAI/MiniMax-M3":
-        input: [text, image]
+      MiniMaxAI/MiniMax-M3:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "Qwen/Qwen3.6-Plus":
-        input: [text, image]
+      Qwen/Qwen3.6-Plus:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "Qwen/Qwen3.7-Flash":
-        input: [text, image]
+      Qwen/Qwen3.7-Flash:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "Qwen/Qwen3.7-Plus":
-        input: [text, image]
+      Qwen/Qwen3.7-Plus:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "Qwen/Qwen3.8-27B":
-        input: [text, image]
+      Qwen/Qwen3.8-27B:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "Qwen/Qwen3.8-Flash":
-        input: [text, image]
+      Qwen/Qwen3.8-Flash:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "Qwen/Qwen3.8-Max":
-        input: [text, image]
+      Qwen/Qwen3.8-Max:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "Qwen/Qwen3.8-Max-0902":
-        input: [text, image]
+      Qwen/Qwen3.8-Max-0902:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "Qwen/Qwen3.8-Omni-Flash":
-        input: [text, image]
+      Qwen/Qwen3.8-Omni-Flash:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "claude-sonnet-5-5":
-        input: [text, image]
-      "deepseek/deepseek-v4-flash":
-        input: [text, image]
+      claude-sonnet-5-5:
+        input:
+          - text
+          - image
+      deepseek/deepseek-v4-flash:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "deepseek/deepseek-v4-flash-vision-exp":
-        input: [text, image]
+      deepseek/deepseek-v4-flash-vision-exp:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "deepseek/deepseek-v4.1-flash":
-        input: [text, image]
+      deepseek/deepseek-v4.1-flash:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "deepseek/deepseek-v4.1-flash-fast":
-        input: [text, image]
+      deepseek/deepseek-v4.1-flash-fast:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "google/gemini-3.7-flash":
-        input: [text, image]
+      google/gemini-3.7-flash:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "google/gemini-3.8-flash":
-        input: [text, image]
+      google/gemini-3.8-flash:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "gpt-5.6-luna":
-        input: [text, image]
+      gpt-5.6-luna:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "gpt-5.6-sol":
-        input: [text, image]
+      gpt-5.6-sol:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "gpt-6-luna":
+      gpt-6-luna:
         contextWindow: 1126400
-        input: [text, image]
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "mistral/mistral-large-4":
-        input: [text, image]
+      mistral/mistral-large-4:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "moonshotai/Kimi-K2.5":
-        input: [text, image]
+      moonshotai/Kimi-K2.5:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "moonshotai/Kimi-K2.6":
-        input: [text, image]
+      moonshotai/Kimi-K2.6:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "moonshotai/Kimi-K2.7-Code":
-        input: [text, image]
+      moonshotai/Kimi-K2.7-Code:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "moonshotai/Kimi-K2.7-Code-Highspeed":
-        input: [text, image]
+      moonshotai/Kimi-K2.7-Code-Highspeed:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "moonshotai/Kimi-K3":
-        input: [text, image]
+      moonshotai/Kimi-K3:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "stepfun/Step-3.5-Flash":
-        input: [text, image]
+      stepfun/Step-3.5-Flash:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "stepfun/Step-5-Preview":
-        input: [text, image]
+      stepfun/Step-5-Preview:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "xai/grok-4.5":
-        input: [text, image]
+      xai/grok-4.5:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "xai/grok-4.6":
-        input: [text, image]
+      xai/grok-4.6:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "xai/grok-4.7":
-        input: [text, image]
+      xai/grok-4.7:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "xiaomi/mimo-v2.5":
-        input: [text, image]
+      xiaomi/mimo-v2.5:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "xiaomi/mimo-v2.6-flash":
-        input: [text, image]
+      xiaomi/mimo-v2.6-flash:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "xiaomi/mimo-v2.6-pro":
-        input: [text, image]
+      xiaomi/mimo-v2.6-pro:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "xiaomi/mimo-v2.6-pro-ultraspeed":
-        input: [text, image]
+      xiaomi/mimo-v2.6-pro-ultraspeed:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "z-ai/glm-5.3-flash":
-        input: [text, image]
+      z-ai/glm-5.3-flash:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false
-      "z-ai/glm-5.3-flashx":
-        input: [text, image]
+      z-ai/glm-5.3-flashx:
+        input:
+          - text
+          - image
         compat:
           stripImageInput: false

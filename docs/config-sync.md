@@ -22,7 +22,7 @@
 - 基线：`~/.omp/config-sync/state.json` = `{version:1, files:{rel:sha256}}`（脱敏归一化哈希，无正文无秘密）
 - 备份：`~/.omp/config-sync/backups/<ts>-<pid>/`（icacls 私有 ACL；win: 当前用户 SID + SYSTEM）
 - 导出/部署错误输出只含相对路径与字段路径；helper 用户可见消息一律 ASCII（避免 PS5.1 控制台 CJK 乱码）
-- deploy-models：仓库为源；同 provider 本机真实 key 优先保留；`agent-plan`←`OMP_AGENT_PLAN_KEY`、`zhipu`←`ZHIPU_API_KEY`；其他保持占位符。仓库缺定义但本机有真实 key 的 provider → 拒绝部署
+- deploy-models：仓库为源；同 provider 本机真实 key 优先保留；`agent-plan`←`OMP_AGENT_PLAN_KEY`、`zhipu`←`ZHIPU_API_KEY`；`volcengine-coding` 留 `<VOLCENGINE_CODING_API_KEY>` 占位符，需在新机器本地填写；其他未映射 provider 保持占位符。仓库缺定义但本机有真实 key 的 provider → 拒绝部署
 - set-shell：`--shell <pwsh>` 写入 shellPath；缺省删除（omp 回退默认）
 
 ## 无基线部署守卫允许的机器差异（`withAllowedMachinePaths`，双向归一）
