@@ -102,6 +102,7 @@ cd omp-config
 | `~/.omp/agent/settings.json` | — | 直接复制 | 不再单独设 shellPath，统一走 config.yml |
 | `~/.omp/agent/config.yml` | `extendedContext` | 直接复制 | 当前为 `false`；`cycleOrder` 为 `default → smol → slow → agent-plan` |
 | `~/.omp/agent/config.yml` | `defaultThinkingLevel` / `hideThinkingBlock` | 直接复制 | 默认思考档 `auto`；`hideThinkingBlock: true`，隐藏模型返回的思考块 |
+| `~/.omp/agent/config.yml` | `tui.mouse` | 直接复制 | `false`：关闭主会话的鼠标捕获，终端可使用原生鼠标选择和滚轮 |
 | `~/.omp/agent/config.yml` | `images.describeForTextModels` | 直接复制 | `true`：文本模型收到图片时委托 `vision` 角色描述（见「视觉能力配置」） |
 | `~/.omp/agent/config.yml` | `retry.fallbackChains` | 直接复制 | 失败回退链：`web` 主链 25 项；`smol` 和 `task` 各两项，`advisor` 一项（见「联网搜索」） |
 | `~/.omp/agent/config.yml` | `commands` | 直接复制 | 命令来源开关：`enableClaudeUser`（`~/.claude/commands/`）、`enableOpencodeProject`（`.opencode/commands/`） |
