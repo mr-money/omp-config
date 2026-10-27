@@ -99,9 +99,9 @@ cd omp-config
 | `~/.omp/agent/config.yml` | `statusLine` | 直接复制 | 自定义状态栏：custom 段列表（无 cost 段）、git 只显分支名、path 缩写、模型名带思考档位 |
 | `~/.omp/agent/settings.json` | — | 直接复制 | 不再单独设 shellPath，统一走 config.yml |
 | `~/.omp/agent/config.yml` | `extendedContext` | 直接复制 | 当前为 `false`；`cycleOrder` 为 `default → smol → slow → agent-plan` |
-| `~/.omp/agent/config.yml` | `defaultThinkingLevel` / `hideThinkingBlock` | 直接复制 | 默认思考档 `auto`；`hideThinkingBlock: false`，不会隐藏模型返回的思考块 |
+| `~/.omp/agent/config.yml` | `defaultThinkingLevel` / `hideThinkingBlock` | 直接复制 | 默认思考档 `auto`；`hideThinkingBlock: true`，隐藏模型返回的思考块 |
 | `~/.omp/agent/config.yml` | `images.describeForTextModels` | 直接复制 | `true`：文本模型收到图片时委托 `vision` 角色描述（见「视觉能力配置」） |
-| `~/.omp/agent/config.yml` | `retry.fallbackChains` | 直接复制 | 失败回退链：`web` 主链 25 项按序；另有 `smol`/`task`/`advisor` 三条各回退到 `deepseek/deepseek-flash:high`（见「联网搜索」） |
+| `~/.omp/agent/config.yml` | `retry.fallbackChains` | 直接复制 | 失败回退链：`web` 主链 25 项；`smol` 和 `task` 各两项，`advisor` 一项（见「联网搜索」） |
 | `~/.omp/agent/config.yml` | `commands` | 直接复制 | 命令来源开关：`enableClaudeUser`（`~/.claude/commands/`）、`enableOpencodeProject`（`.opencode/commands/`） |
 
 ### 验证
@@ -143,21 +143,21 @@ statusLine:
 
 | 角色 | 模型 | 思考档位 | 用途 |
 |------|------|----------|------|
-| `default` | openai-codex/gpt-6-luna | `high` | 默认主模型，日常编码（Codex 通道） |
-| `plan` | openai-codex/gpt-6.1-sol | `medium` | 任务规划阶段 |
-| `slow` | openai-codex/gpt-6.1-sol | `medium` | 深度推理 / 复杂问题 |
-| `smol` | agent-plan/glm-5-3-flash | — | 轻量快速任务（失败回退 `deepseek/deepseek-flash:high`） |
-| `tiny` | commandcode/minimax/minimax-m3.1-flash | — | 轻量后台任务（会话标题等） |
+| `default` | openai-codex/gpt-6.1-terra | `medium` | 默认主模型，日常编码（Codex 通道） |
+| `plan` | openai-codex/gpt-6.1-sol | `high` | 任务规划阶段 |
+| `slow` | openai-codex/gpt-6.1-sol | `high` | 深度推理 / 复杂问题 |
+| `smol` | openai-codex/gpt-6-luna | `high` | 轻量快速任务（回退链见「联网搜索」） |
+| `tiny` | openai-codex/gpt-6-luna | `off` | 轻量后台任务（会话标题等） |
 | `commit` | openai-codex/gpt-6-luna | `off` | 生成 commit message |
-| `task` | openai-codex/gpt-6-luna | `medium` | 任务子代理（委派多步任务） |
+| `task` | openai-codex/gpt-6.1-terra | `xhigh` | 任务子代理（委派多步任务） |
 | `advisor` | deepseek/deepseek-flash | `low` | 顾问模式 |
 | `vision` | agent-plan/deepseek-v4.1-flash | `low` | 视觉 / 图片理解（见「视觉能力配置」） |
 | `web` | web/tavily | — | 联网搜索主通道（失败回退链见「联网搜索」） |
 | `memory` | deepseek/deepseek-flash | `low` | 记忆事实抽取 / 整理（官方 DeepSeek API） |
 | `DeepSeek` | deepseek/deepseek-flash | `high` | 官方 DeepSeek API 备用通道（不在 `cycleOrder` 中） |
-| `agent-plan` | agent-plan/deepseek-v4.1-flash | `high` | 火山方舟 Agent Plan 通道（订阅制，1M 上下文） |
+| `agent-plan` | agent-plan/glm-5-3-flash | — | 火山方舟 Agent Plan 通道（订阅制，1M 上下文） |
 
-角色写法是 `provider/model:思考档位`。OMP 的 commandcode 模型目录只列出无思考档位的 `minimax/minimax-m3.1-flash`；旧 `tiny` 值的 `:free` 会被当作无效思考档位，因此已移除。`commit` 显式关闭思考（`off`）。思考档位取值以 `omp models <provider>` 的 `thinking` 列（或 `omp models ls`）为准。
+角色写法是 `provider/model:思考档位`。`commit` 和 `tiny` 显式关闭思考（`off`）。思考档位取值以 `omp models <provider>` 的 `thinking` 列（或 `omp models ls`）为准。
 
 **思考档位循环 (`cycleOrder`)**: `default` → `smol` → `slow` → `agent-plan`。
 
@@ -165,7 +165,7 @@ statusLine:
 
 - **主通道**：`web` 角色 = `web/tavily`。
 - **失败回退链**（`retry.fallbackChains.web`，按序）：`web/perplexity` → `google-gemini-cli/gemini-2.5-flash` → `google-antigravity/gemini-2.5-flash` → `google/gemini-2.5-flash` → `anthropic/claude-haiku-4-5` → `openai-codex/gpt-5.6-luna` → `xai/grok-4.5` → `web/zai` → `web/exa` → `web/tinyfish` → `web/jina` → `web/kagi` → `web/firecrawl` → `web/brave` → `web/kimi` → `web/parallel` → `web/synthetic` → `web/searxng` → `web/startpage` → `web/duckduckgo` → `web/ecosia` → `web/google` → `web/mojeek` → `web/public` → `web/hosted`。
-- **角色级回退链**（`retry.fallbackChains.{smol,task,advisor}`）：三条各一项 → `deepseek/deepseek-flash:high`。各自配置的主模型不可用时，回退到官方 DeepSeek。
+- **角色级回退链**（按序）：`smol` 为 `agent-plan/glm-5-3-flash`、`zhipu/glm-5.3-flash:low`；`task` 为 `agent-plan/deepseek-v4.1-flash:high`、`deepseek/deepseek-v4-flash:high`；`advisor` 为 `deepseek/deepseek-flash:high`。
 - 排序意图：先走托管搜索/通用模型（perplexity、gemini、haiku、grok），再走需要 key 或自建/公共实例的 `web/*` 提供方，最后兜底 `web/hosted`。
 - 旧写法 `providers.webSearchOrder` 已被这套取代（omp bundle 里它只是 `providers.webSearch` 的遗留别名），本配置不再保留该键。
 
@@ -270,12 +270,12 @@ pwsh -File "$d\install.ps1" --skip-config
 图片生成 Skill（`~/.omp/agent/skills/byted-ark-seedream-skill/`）：豆包 Seedream 生图（Agent Plan 专属版），支持文生图/图生图/连贯组图/联网搜索；API Key 走 `~/.omp/agent/.env` 的 `ARK_SEEDREAM_API_KEY`，图片默认存启动目录 `Seedream-Images/`（已加入 `.gitignore`）。
 
 OpenAI Codex（`openai-codex` provider，omp **内置**）：
-- 角色分配：`default` = `gpt-6-luna:high`，`task` = `gpt-6-luna:medium`，`commit` = `gpt-6-luna:off`；`plan` / `slow` = `gpt-6.1-sol:medium`。
+- 角色分配：`default` = `gpt-6.1-terra:medium`，`task` = `gpt-6.1-terra:xhigh`，`smol` = `gpt-6-luna:high`，`tiny` / `commit` = `gpt-6-luna:off`；`plan` / `slow` = `gpt-6.1-sol:high`。
 - **无需 `apiKey`/`baseUrl`**：OAuth 登录（`omp login openai-codex`），凭据存 omp 凭据库（`agent.db`）。
 - 不在 `models.yml` 中声明；要改价/上下文，用 `providers.openai-codex.modelOverrides` 覆盖内置值。
 
 智谱 GLM（`zhipu` provider，智谱开放平台，OpenAI 兼容）：
-- **glm-5.3-flash** — 智谱 provider 中可显式选择的模型；当前未分配到 `modelRoles`。多模态（文本+图像），1M 上下文，131K 输出上限，`reasoning`（思考档位 `low/high/max`，默认 `max`）。
+- **glm-5.3-flash** — 智谱 provider 中 `smol` 的第二回退模型。多模态（文本+图像），1M 上下文，131K 输出上限，`reasoning`（思考档位 `low/high/max`，默认 `max`）。
 - `baseUrl: https://open.bigmodel.cn/api/paas/v4`，请求自动落到 `/chat/completions`；`open.bigmodel.cn` 主机会被自动识别为智谱，走 `zai` thinking 方言（`thinking.type: enabled` + `reasoning_effort`，工具调用时自动开启 `tool_stream`）
 - 价格（元/百万 tokens）：输入 **0.8**、输出 **2.8**、缓存命中 **0.23**、缓存写入 **0.8**。`models.yml` `cost` 块**直接写人民币价**（master 状态栏不显示 cost，此价格供 API 记账/其他工具使用）。
 

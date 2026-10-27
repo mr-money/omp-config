@@ -1,17 +1,17 @@
 modelRoles:
-  plan: openai-codex/gpt-6.1-sol:medium
-  slow: openai-codex/gpt-6.1-sol:medium
+  plan: openai-codex/gpt-6.1-sol:high
+  slow: openai-codex/gpt-6.1-sol:high
   advisor: deepseek/deepseek-flash:low
   commit: openai-codex/gpt-6-luna:off
-  smol: agent-plan/glm-5-3-flash
-  tiny: commandcode/minimax/minimax-m3.1-flash
+  smol: openai-codex/gpt-6-luna:high
+  tiny: openai-codex/gpt-6-luna:off
   vision: agent-plan/deepseek-v4.1-flash:low
   DeepSeek: deepseek/deepseek-flash:high
-  task: openai-codex/gpt-6-luna:medium
-  agent-plan: agent-plan/deepseek-v4.1-flash:high
+  task: openai-codex/gpt-6.1-terra:xhigh
+  agent-plan: agent-plan/glm-5-3-flash
   web: web/tavily
   memory: deepseek/deepseek-flash:low
-  default: openai-codex/gpt-6-luna:high
+  default: openai-codex/gpt-6.1-terra:medium
 defaultThinkingLevel: auto
 memory:
   backend: mnemopi
@@ -19,7 +19,7 @@ mnemopi:
   scoping: per-project-tagged
   embeddingVariant: multilingual
   recallLimit: 10
-hideThinkingBlock: false
+hideThinkingBlock: true
 cycleOrder:
   - default
   - smol
@@ -90,9 +90,11 @@ retry:
       - web/public
       - web/hosted
     smol:
-      - deepseek/deepseek-flash:high
+      - agent-plan/glm-5-3-flash
+      - zhipu/glm-5.3-flash:low
     task:
-      - deepseek/deepseek-flash:high
+      - agent-plan/deepseek-v4.1-flash:high
+      - deepseek/deepseek-v4-flash:high
     advisor:
       - deepseek/deepseek-flash:high
 commands:
