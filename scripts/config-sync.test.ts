@@ -85,8 +85,8 @@ function syncEntry(fx: Fixture, psArgs: string[], exe = "pwsh") {
   return runInFixture(fx, [exe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(fx.repoDir, "sync-from-live.ps1"), ...psArgs]);
 }
 
-function setupEntry(fx: Fixture, psArgs: string[], exe = "pwsh") {
-  return runInFixture(fx, [exe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(fx.repoDir, "setup.ps1"), ...psArgs]);
+function setupEntry(fx: Fixture, psArgs: string[], exe = "pwsh", env: Record<string, string> = {}) {
+  return runInFixture(fx, [exe, "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", join(fx.repoDir, "setup.ps1"), ...psArgs], env);
 }
 
 function gitHead(fx: Fixture): string {
@@ -363,13 +363,12 @@ describe("dirty repo file conflicts", () => {
   });
 });
 
-// ---------- 行为 6：新机器/基线守卫/损坏 state ----------
+// ---------- 行为 6：以仓库为准部署，漂移不阻塞，覆盖与删除前备份 ----------
 
-describe("deploy guard baseline lifecycle", () => {
+describe("repo-authoritative deployment", () => {
   test("new machine with no portable config: setup -Check allowed, creates no dirs", () => {
     const fx = makeFixture("new-machine");
     writeRepoBase(fx);
-    // fixture 本身预建了空的 .omp/agent；断言 -Check 不写入任何状态/备份/配置
     const agentBefore = readdirSync(fx.agentDir);
     const r = setupEntry(fx, ["-Check"]);
     expect(r.code).toBe(0);
@@ -377,58 +376,149 @@ describe("deploy guard baseline lifecycle", () => {
     expect(existsSync(join(fx.ompDir, "config-sync"))).toBe(false);
   });
 
-  test("live without baseline differing from repo: denied; after export: allowed; corrupt state: denied", () => {
+  test("setup -Check allows drift without a baseline and with corrupt state, without writing", () => {
     const fx = makeFixture("baseline-flow");
     writeRepoBase(fx);
     writeLiveBase(fx);
-    // live 与 repo 不同（真实 key vs 占位符 = 允许的机器差异，这里改个真实偏好）
-    writeFileSync(join(fx.agentDir, "config.yml"), "modelRoles:\n  smol: zhipu/glm-5.3-flash\nhideThinkingBlock: true\n");
-    const denied = helper(fx, ["guard-deploy"]);
-    expect(denied.code).toBe(1);
-    // 导出后允许
-    const exp = syncEntry(fx, ["-Export"]);
-    expect(exp.code).toBe(0);
-    const allowed = helper(fx, ["guard-deploy"]);
-    expect(allowed.code).toBe(0);
-    // 损坏 state
-    writeFileSync(join(fx.ompDir, "config-sync", "state.json"), "{broken");
-    const corrupt = helper(fx, ["guard-deploy"]);
-    expect(corrupt.code).toBe(1);
-    expect(corrupt.stderr).toContain("state.json");
+    const drift = "modelRoles:\n  smol: zhipu/glm-5.3-flash\nhideThinkingBlock: true\n";
+    writeFileSync(join(fx.agentDir, "config.yml"), drift);
+    mkdirSync(join(fx.agentDir, "skills", "local-only"), { recursive: true });
+    writeFileSync(join(fx.agentDir, "skills", "local-only", "SKILL.md"), "local\n");
+
+    const noBaseline = setupEntry(fx, ["-Check"]);
+    expect(noBaseline.code).toBe(0);
+    expect(readFileSync(join(fx.agentDir, "config.yml"), "utf8")).toBe(drift);
+    expect(existsSync(join(fx.ompDir, "config-sync"))).toBe(false);
+
+    mkdirSync(join(fx.ompDir, "config-sync"), { recursive: true });
+    const state = join(fx.ompDir, "config-sync", "state.json");
+    writeFileSync(state, "{broken");
+    const corrupt = setupEntry(fx, ["-Check"]);
+    expect(corrupt.code).toBe(0);
+    expect(readFileSync(state, "utf8")).toBe("{broken");
+    expect(existsSync(join(fx.ompDir, "config-sync", "backups"))).toBe(false);
+    expect(readFileSync(join(fx.agentDir, "skills", "local-only", "SKILL.md"), "utf8")).toBe("local\n");
   });
 
-  test("baseline drift: live add/modify/delete denied; repo-side update allowed", () => {
+  test("setup deploys repo changes over added, modified and deleted live files, backing up overwritten and removed files", () => {
     const fx = makeFixture("drift");
     writeRepoBase(fx);
     writeLiveBase(fx);
-    // 本机先有一个可变更的技能文件
-    mkdirSync(join(fx.agentDir, "skills", "live-only-skill"), { recursive: true });
-    writeFileSync(join(fx.agentDir, "skills", "live-only-skill", "SKILL.md"), "live only\n");
-    expect(syncEntry(fx, ["-Export"]).code).toBe(0);
-    // 修改 repo（模拟 git pull 更新仓库）-> 允许
-    writeFileSync(join(fx.repoDir, "agent", "settings.json"), "{}\n");
-    Bun.spawnSync(["git", "-C", fx.repoDir, "add", "-A"], { stdout: "pipe" });
-    Bun.spawnSync(["git", "-C", fx.repoDir, "commit", "-m", "repo update"], { stdout: "pipe" });
-    const pullLike = helper(fx, ["guard-deploy"]);
-    expect(pullLike.code).toBe(0);
-    // 本机新增受管文件 -> 拒绝
-    mkdirSync(join(fx.agentDir, "skills", "brand-new"), { recursive: true });
-    writeFileSync(join(fx.agentDir, "skills", "brand-new", "SKILL.md"), "new\n");
-    const added = helper(fx, ["guard-deploy"]);
-    expect(added.code).toBe(1);
-    expect(added.stderr).toContain("skills/brand-new/SKILL.md");
-    rmSync(join(fx.agentDir, "skills", "brand-new"), { recursive: true, force: true });
-    // 本机修改受管内容 -> 拒绝
-    writeFileSync(join(fx.agentDir, "settings.json"), "{}\n");
-    writeFileSync(join(fx.agentDir, "skills", "live-only-skill", "SKILL.md"), "live only v2\n");
-    const modified = helper(fx, ["guard-deploy"]);
-    expect(modified.code).toBe(1);
-    // 本机删除受管文件 -> 拒绝
-    writeFileSync(join(fx.agentDir, "skills", "live-only-skill", "SKILL.md"), "live only\n");
+    const repoAgent = join(fx.repoDir, "agent");
+    const repoSkill = join(fx.repoDir, "skills", "repo-only-skill", "SKILL.md");
+    const liveSkill = join(fx.agentDir, "skills", "repo-only-skill", "SKILL.md");
+    const liveExtraSkill = join(fx.agentDir, "skills", "local-only", "nested", "extra.txt");
+    const liveAgent = join(fx.agentDir, "agents", "shared.md");
+    const liveExtraAgent = join(fx.agentDir, "agents", "local-only.md");
+    mkdirSync(join(fx.repoDir, "agent", "agents"), { recursive: true });
+    mkdirSync(join(fx.agentDir, "agents"), { recursive: true });
+    mkdirSync(join(fx.agentDir, "skills", "repo-only-skill"), { recursive: true });
+    writeFileSync(join(repoAgent, "agents", "shared.md"), "repo agent\n");
+    writeFileSync(liveAgent, "baseline agent\n");
+    writeFileSync(liveSkill, "baseline skill\n");
+    writeFileSync(join(fx.agentDir, "settings.json"), '{"baseline":true}\n');
+    expect(helper(fx, ["record-state"]).code).toBe(0);
+
+    // 仓库更新，以及本机新增、修改和删除的受管内容同时存在。
+    writeFileSync(repoSkill, "updated repo skill\n");
+    writeFileSync(join(repoAgent, "settings.json"), '{"source":"repo"}\n');
+    writeFileSync(liveSkill, "modified local skill\n");
+    writeFileSync(liveAgent, "modified local agent\n");
+    mkdirSync(join(fx.agentDir, "skills", "local-only", "nested"), { recursive: true });
+    writeFileSync(liveExtraSkill, "local extra skill\n");
+    writeFileSync(join(fx.agentDir, "skills", "local-only", "nested", "history.db"), "nested session data\n");
+    writeFileSync(join(fx.agentDir, "skills", "local-only", "nested", ".env"), "NESTED_SECRET=keep\n");
+    writeFileSync(liveExtraAgent, "local extra agent\n");
     rmSync(join(fx.agentDir, "settings.json"));
-    const deleted = helper(fx, ["guard-deploy"]);
-    expect(deleted.code).toBe(1);
-    expect(deleted.stderr).toContain("agent/settings.json");
+    writeFileSync(join(fx.agentDir, "lsp.json"), JSON.stringify({
+      servers: { gopls: { command: "C:/old/gopls.exe", fileTypes: [".go"], rootMarkers: ["."] } },
+    }));
+    writeFileSync(join(fx.agentDir, "config.yml"), "modelRoles:\n  smol: zhipu/glm-5.3-flash\nhideThinkingBlock: false\n");
+    const liveModels = MINIMAL_MODELS.replace("<ARK_API_KEY>", "ark-live-secret-0001") +
+      "  orphan-p:\n    apiKey: ark-orphan-key-0006\n";
+    writeFileSync(join(fx.agentDir, "models.yml"), liveModels);
+    writeFileSync(join(repoAgent, "models.yml"), MINIMAL_MODELS +
+      "  zhipu:\n    baseUrl: https://zhipu.example/v4\n    api: openai-completions\n    apiKey: <ZHIPU_API_KEY>\n    models: []\n");
+    const sessionDb = join(fx.agentDir, "sessions", "session.db");
+    mkdirSync(join(fx.agentDir, "sessions"), { recursive: true });
+    writeFileSync(sessionDb, "session data\n");
+    writeFileSync(join(fx.agentDir, "agents", ".env"), "LOCAL_SECRET=do-not-delete\n");
+
+    // 提供隔离的已安装包，使真实 setup.ps1 子进程不联网安装。
+    const bunInstall = join(fx.root, "bun-install");
+    const pkg = join(bunInstall, "install", "global", "node_modules", "@oh-my-pi", "pi-coding-agent");
+    mkdirSync(join(pkg, "dist"), { recursive: true });
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ version: "18.8.3" }));
+    writeFileSync(join(pkg, "dist", "cli.js"), "");
+    const env = { BUN_INSTALL: bunInstall, ZHIPU_API_KEY: "zhipu-from-env-0005" };
+    const check = setupEntry(fx, ["-Check"], "pwsh", env);
+    expect(check.code).toBe(0);
+    expect(existsSync(liveExtraSkill)).toBe(true);
+    expect(existsSync(join(fx.ompDir, "config-sync", "backups"))).toBe(false);
+    // 即便原有基线损坏，实际部署仍以仓库为准并在完成后重建基线。
+    const state = join(fx.ompDir, "config-sync", "state.json");
+    writeFileSync(state, "{broken");
+
+    const r = setupEntry(fx, [], "pwsh", env);
+    expect(r.code).toBe(0);
+    expect(readFileSync(liveSkill, "utf8")).toBe("updated repo skill\n");
+    expect(readFileSync(liveAgent, "utf8")).toBe("repo agent\n");
+    expect(readFileSync(join(fx.agentDir, "settings.json"), "utf8")).toBe('{"source":"repo"}\n');
+    expect(existsSync(liveExtraSkill)).toBe(false);
+    expect(existsSync(liveExtraAgent)).toBe(false);
+    expect(readFileSync(sessionDb, "utf8")).toBe("session data\n");
+    expect(readFileSync(join(fx.agentDir, ".env"), "utf8")).toContain("tvly-live-secret-0000000000000");
+    expect(readFileSync(join(fx.agentDir, "agents", ".env"), "utf8")).toBe("LOCAL_SECRET=do-not-delete\n");
+    expect(readFileSync(join(fx.agentDir, "skills", "local-only", "nested", "history.db"), "utf8")).toBe("nested session data\n");
+    expect(readFileSync(join(fx.agentDir, "skills", "local-only", "nested", ".env"), "utf8")).toBe("NESTED_SECRET=keep\n");
+    const config = readFileSync(join(fx.agentDir, "config.yml"), "utf8");
+    expect(config).toContain("agent-plan/glm-5-3-flash");
+    expect(config).toContain("shellPath:");
+    expect(config).not.toContain("zhipu/glm-5.3-flash");
+    const lsp = JSON.parse(readFileSync(join(fx.agentDir, "lsp.json"), "utf8"));
+    expect(lsp.servers.gopls.command).toMatch(/(?:^|[\\/])gopls(?:\.exe)?$/i);
+    expect(lsp.servers.gopls.fileTypes).toEqual([".go"]);
+    const models = readFileSync(join(fx.agentDir, "models.yml"), "utf8");
+    expect(models).toContain("ark-live-secret-0001");
+    expect(models).toContain("zhipu-from-env-0005");
+    expect(models).not.toContain("orphan-p");
+    expect(models).not.toContain("ark-orphan-key-0006");
+    expect(r.stdout + r.stderr).not.toContain("ark-live-secret-0001");
+    expect(r.stdout + r.stderr).not.toContain("ark-orphan-key-0006");
+    expect(r.stdout + r.stderr).not.toContain("zhipu-from-env-0005");
+
+    const backupRoot = join(fx.ompDir, "config-sync", "backups");
+    const backups = readdirSync(backupRoot);
+    expect(backups).toHaveLength(1);
+    const backup = join(backupRoot, backups[0]);
+    expect(readFileSync(join(backup, "skills__repo-only-skill__SKILL.md"), "utf8")).toBe("modified local skill\n");
+    expect(readFileSync(join(backup, "skills__local-only__nested__extra.txt"), "utf8")).toBe("local extra skill\n");
+    expect(readFileSync(join(backup, "agent__agents__shared.md"), "utf8")).toBe("modified local agent\n");
+    expect(readFileSync(join(backup, "agent__agents__local-only.md"), "utf8")).toBe("local extra agent\n");
+    expect(readFileSync(join(backup, "agent__models.yml"), "utf8")).toBe(liveModels);
+    expect(readFileSync(join(backup, "agent__config.yml"), "utf8")).toContain("zhipu/glm-5.3-flash");
+    expect(() => JSON.parse(readFileSync(state, "utf8"))).not.toThrow();
+  });
+
+  test("setup -Check still rejects repository secrets and non-portable paths without touching live data", () => {
+    for (const kind of ["secret", "path"]) {
+      const fx = makeFixture(`deploy-reject-${kind}`);
+      writeRepoBase(fx);
+      writeLiveBase(fx);
+      if (kind === "secret") {
+        writeFileSync(join(fx.repoDir, "agent", "models.yml"), MINIMAL_MODELS.replace("<ARK_API_KEY>", "repo-secret-value-1234567890"));
+      } else {
+        writeFileSync(join(fx.repoDir, "agent", "mcp.json"), JSON.stringify({
+          mcpServers: { weird: { command: "C:/nonportable/weird-tool.exe", args: [], type: "stdio" } },
+        }));
+      }
+      const before = readFileSync(join(fx.agentDir, "models.yml"), "utf8");
+      const r = setupEntry(fx, ["-Check"]);
+      expect(r.code).toBe(1);
+      expect(r.stdout + r.stderr).not.toContain("repo-secret-value-1234567890");
+      expect(readFileSync(join(fx.agentDir, "models.yml"), "utf8")).toBe(before);
+      expect(existsSync(join(fx.ompDir, "config-sync"))).toBe(false);
+    }
   });
 });
 
@@ -549,19 +639,27 @@ describe("deploy-models and set-shell", () => {
     expect(r.stdout).not.toContain("ark-live-plan-key-0004");
   });
 
-  test("deploy-models denies orphan provider with real key", () => {
+  test("deploy-models drops orphan provider without blocking or exposing its key", () => {
     const fx = makeFixture("orphan");
     writeRepoBase(fx);
     writeFileSync(
       join(fx.agentDir, "models.yml"),
       `providers:
+  agent-plan:
+    apiKey: ark-live-plan-key-0004
   orphan-p:
     apiKey: ark-orphan-key-0006
 `,
     );
-    const r = helper(fx, ["deploy-models", "--output", join(fx.agentDir, "models.yml")]);
-    expect(r.code).toBe(1);
-    expect(r.stderr).toContain("orphan-p");
+    const output = join(fx.agentDir, "models.yml");
+    const r = helper(fx, ["deploy-models", "--output", output]);
+    expect(r.code).toBe(0);
+    const deployed = readFileSync(output, "utf8");
+    expect(deployed).toContain("ark-live-plan-key-0004");
+    expect(deployed).toContain("glm-5-3-flash");
+    expect(deployed).not.toContain("orphan-p");
+    expect(deployed).not.toContain("ark-orphan-key-0006");
+    expect(r.stdout + r.stderr).not.toContain("ark-orphan-key-0006");
   });
 
   test("set-shell writes and deletes shellPath", () => {

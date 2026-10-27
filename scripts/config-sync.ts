@@ -5,7 +5,7 @@
  * 操作（--repo/--home 必填，绝对路径）：
  *   check         本机 → 仓库 只读差异检查（有可导出变化退出 2）
  *   export        本机 → 仓库 脱敏导出（含备份/原子写/回滚/基线记录）
- *   guard-deploy  部署前漂移守卫 + 仓库边界校验（--backup 创建私有备份；--json 输出 {files,backupDir}）
+ *   guard-deploy  仓库边界校验及只读部署清单（--backup 备份覆盖和删除项；--json 输出 {files,deletes,removeDirs,backupDir}）
  *   record-state  记录当前本机受管内容的脱敏归一化基线
  *   deploy-models 以仓库 models.yml 为源写目标 models.yml，保留本机同 provider 真实 key / 注入环境变量（--output）
  *   set-shell     结构化写回 config.yml 的 shellPath（--file <config.yml> [--shell <pwsh>]；缺 --shell 则删除）
@@ -18,6 +18,7 @@ import { createHash } from "node:crypto";
 import {
   copyFileSync,
   existsSync,
+  lstatSync,
   mkdirSync,
   readdirSync,
   readFileSync,
@@ -26,7 +27,8 @@ import {
   unlinkSync,
   writeFileSync,
 } from "node:fs";
-import { basename, dirname, join, relative, resolve, sep } from "node:path";
+import type { Stats } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 
 // ---------- 唯一对象守卫（单文件脚本 = 唯一定义点，导出复用） ----------
 
@@ -108,9 +110,6 @@ function stableStringify(v: unknown): string {
   return JSON.stringify(v) ?? "null";
 }
 
-function toPosix(p: string): string {
-  return p.split(sep).join("/").replace(/\/+/g, "/");
-}
 
 function looksAbsoluteCommand(s: string): boolean {
   return /^[A-Za-z]:[\\/]/.test(s) || s.startsWith("\\\\") || s.startsWith("/");
@@ -192,6 +191,7 @@ function walkDir(absDir: string, relPrefix: string, out: string[], skips: string
   }
   for (const e of entries) {
     const rel = relPrefix ? `${relPrefix}/${e.name}` : e.name;
+    if (EXCLUDED_DIR_NAMES[e.name] === true || (!e.isDirectory() && isExcludedFile(e.name))) continue;
     if (e.isSymbolicLink()) {
       skips.push(rel);
       continue;
@@ -206,13 +206,32 @@ function walkDir(absDir: string, relPrefix: string, out: string[], skips: string
   }
 }
 
-/** 收集某一侧（仓库根或 OMP home）的受管相对路径（agent/... 形态，排序）。 */
+/** 收集受管常规文件；任何链接或不可读取的路径记录到 skips，不沿链接遍历。 */
 function collectManaged(base: string, isLiveSide: boolean, skips: string[]): string[] {
   const out: string[] = [];
-  for (const f of MANAGED_FILES) if (existsSync(sideAbs(base, isLiveSide, f))) out.push(f);
+  const inspect = (abs: string, rel: string, directory: boolean): boolean => {
+    let stat: Stats;
+    try {
+      stat = lstatSync(abs);
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== "ENOENT") skips.push(rel);
+      return false;
+    }
+    if (stat.isSymbolicLink() || (directory ? !stat.isDirectory() : !stat.isFile())) {
+      skips.push(rel);
+      return false;
+    }
+    return true;
+  };
+  // agent 是固定文件和本机两个受管目录的共同祖先。
+  const agentSafe = inspect(join(base, "agent"), "agent", true);
+  if (agentSafe) {
+    for (const f of MANAGED_FILES) if (inspect(sideAbs(base, isLiveSide, f), f, false)) out.push(f);
+  }
   for (const d of MANAGED_DIRS) {
+    if ((isLiveSide || d.startsWith("agent/")) && !agentSafe) continue;
     const abs = sideAbs(base, isLiveSide, d);
-    if (existsSync(abs)) walkDir(abs, d, out, skips);
+    if (inspect(abs, d, true)) walkDir(abs, d, out, skips);
   }
   return out.sort();
 }
@@ -277,8 +296,8 @@ function collectKnownSecrets(home: string): string[] {
   const modelsPath = join(home, "agent", "models.yml");
   if (existsSync(modelsPath)) {
     try {
-      const parsed = parseYaml(readFileSync(modelsPath, "utf8"), "live models.yml");
-      const providers = parsed.providers;
+      const parsed: unknown = Bun.YAML.parse(readFileSync(modelsPath, "utf8"));
+      const providers = isRecord(parsed) ? parsed.providers : null;
       if (isRecord(providers)) {
         for (const v of Object.values(providers)) {
           if (isRecord(v) && typeof v.apiKey === "string") {
@@ -288,7 +307,7 @@ function collectKnownSecrets(home: string): string[] {
         }
       }
     } catch {
-      /* 解析失败不阻断：后续结构化解析会单独报错 */
+      /* 无法解析的本机内容不影响部署；原文件将被备份。 */
     }
   }
   const envPath = join(home, "agent", ".env");
@@ -711,25 +730,6 @@ function writeState(home: string, files: Record<string, string>): void {
   renameSync(tmp, target);
 }
 
-function readState(home: string): Record<string, string> | null {
-  const p = statePath(home);
-  if (!existsSync(p)) return null;
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(readFileSync(p, "utf8"));
-  } catch {
-    return fail(`${toPosix(relative(home, p)) || "config-sync/state.json"}: baseline state corrupted (cannot parse); refusing to operate; inspect and delete manually`);
-  }
-  if (!isRecord(parsed) || parsed.version !== 1 || !isRecord(parsed.files)) {
-    return fail("config-sync/state.json: unsupported baseline version or structure; refusing to operate");
-  }
-  const files: Record<string, string> = {};
-  for (const [k, v] of Object.entries(parsed.files)) {
-    if (typeof v !== "string") fail("config-sync/state.json: baseline hash field has wrong type; refusing to operate");
-    files[k] = v;
-  }
-  return files;
-}
 
 // ---------- 差异摘要（脱敏） ----------
 
@@ -846,31 +846,19 @@ function opExport(repoRoot: string, home: string): void {
   console.log("  recorded sanitized live baseline (config-sync/state.json); no commit, no push");
 }
 
-/**
- * 无基线比较时允许的机器路径差异（双向应用，保证 live 与 repo 归一到同一语义）：
- * - models.yml：provider apiKey（真实值 vs 占位符 -> 哨兵）；仓库独有 reasoning 声明（部署不回退本机）。
- */
-function withAllowedMachinePaths(value: Record<string, unknown>, rel: string): Record<string, unknown> {
-  if (rel !== "agent/models.yml" || !isRecord(value.providers)) return value;
-  for (const p of Object.values(value.providers)) {
-    if (!isRecord(p)) continue;
-    if (typeof p.apiKey === "string" && p.apiKey.trim().length > 0) p.apiKey = SECRET_SENTINEL;
-    if (isRecord(p.modelOverrides)) {
-      for (const mo of Object.values(p.modelOverrides)) {
-        if (isRecord(mo)) delete mo.reasoning;
-      }
-    }
-  }
-  return value;
-}
 
 function opGuardDeploy(repoRoot: string, home: string, opts: { backup: boolean; json: boolean }): void {
-  // 1. 仓库边界：必需文件、解析、占位符/秘密、可移植路径
-  for (const must of ["agent/config.yml", "agent/models.yml"]) {
-    if (!existsSync(join(repoRoot, ...must.split("/")))) fail(`deploy denied: repo missing required file ${must}`);
-  }
+  // 仓库与本机均不沿受管路径中的链接遍历。
   const repoSkips: string[] = [];
+  const liveSkips: string[] = [];
   const repoRels = collectManaged(repoRoot, false, repoSkips);
+  const liveRels = collectManaged(home, true, liveSkips);
+  if (repoSkips.length || liveSkips.length) {
+    fail(`deploy denied: unsafe or unreadable managed paths: ${[...repoSkips.map((p) => `repo:${p}`), ...liveSkips.map((p) => `live:${p}`)].join(", ")}`);
+  }
+  for (const must of ["agent/config.yml", "agent/models.yml"]) {
+    if (!repoRels.includes(must)) fail(`deploy denied: repo missing required file ${must}`);
+  }
   const knownSecrets = collectKnownSecrets(home);
   for (const rel of repoRels) {
     const abs = sideAbs(repoRoot, false, rel);
@@ -878,6 +866,7 @@ function opGuardDeploy(repoRoot: string, home: string, opts: { backup: boolean; 
     if (isStructuredRel(rel)) {
       const blocks: string[] = [];
       const value = isYamlRel(rel) ? parseYaml(text, rel) : parseJson(text, rel);
+      if (rel === "agent/models.yml" && !isRecord(value.providers)) fail("repo models.yml has no providers mapping");
       const checked = rel === "agent/lsp.json" || rel === "agent/mcp.json" ? (normalizeServerCommands(value, rel, "repo", blocks) as Record<string, unknown>) : value;
       for (const b of blocks) fail(`deploy denied: ${b}`);
       const findings: SecretFinding[] = [];
@@ -894,70 +883,49 @@ function opGuardDeploy(repoRoot: string, home: string, opts: { backup: boolean; 
     }
   }
 
-  // 2. 本机漂移守卫
-  const state = readState(home);
-  const liveSkips: string[] = [];
-  const liveRels = collectManaged(home, true, liveSkips);
-  const deny: string[] = [];
-  if (state === null) {
-    if (liveRels.length === 0) {
-      // 新机器：无受管配置，允许部署
-    } else {
-      for (const rel of liveRels) {
-        const liveAbs = sideAbs(home, true, rel);
-        const repoAbs = sideAbs(repoRoot, false, rel);
-        let liveHash: string;
-        if (isStructuredRel(rel)) {
-          const blocks: string[] = [];
-          const value = withAllowedMachinePaths(loadNormalized(liveAbs, rel, "export", blocks), rel);
-          if (value === null) continue;
-          for (const b of blocks) deny.push(`${rel}: ${b}`);
-          liveHash = structuredHash(value);
-        } else {
-          liveHash = sha256(normalizeText(readFileSync(liveAbs, "utf8")));
-        }
-        const repoHash = existsSync(repoAbs)
-          ? isStructuredRel(rel)
-            ? structuredHash(withAllowedMachinePaths(loadNormalized(repoAbs, rel, "repo", []), rel))
-            : sha256(normalizeText(readFileSync(repoAbs, "utf8")))
-          : null;
-        if (repoHash === null || repoHash !== liveHash) deny.push(`${rel}: live config exists without baseline and differs from repo (run sync-from-live.ps1 -Check, review, then -Export)`);
+  // 仓库清单决定覆盖与删除；不读取或比较本机基线。
+  const files = repoRels;
+  const repoSet = new Set(repoRels);
+  const deletes = liveRels.filter((rel) => !repoSet.has(rel));
+  // 仓库文件可能取代本机目录；只能清理包含待删除受管文件和普通空目录的树。
+  const deleteSet = new Set(deletes);
+  const removeDirs: string[] = [];
+  const collectReplaceableDirs = (abs: string, rel: string): void => {
+    for (const entry of readdirSync(abs, { withFileTypes: true })) {
+      const childRel = `${rel}/${entry.name}`;
+      if (entry.isDirectory() && EXCLUDED_DIR_NAMES[entry.name] !== true) {
+        collectReplaceableDirs(join(abs, entry.name), childRel);
+      } else if (!entry.isFile() || !deleteSet.has(childRel)) {
+        fail(`deploy denied: non-managed content blocks repo file ${rel}: ${childRel}`);
       }
     }
-  } else {
-    const current = liveManifest(home, liveSkips);
-    for (const rel of Object.keys(current)) if (!(rel in state)) deny.push(`${rel}: managed file added on live machine (differs from baseline)`);
-    for (const rel of Object.keys(state)) {
-      if (!(rel in current)) deny.push(`${rel}: managed file deleted on live machine (differs from baseline)`);
-      else if (state[rel] !== current[rel]) deny.push(`${rel}: managed content modified on live machine (differs from baseline)`);
+    removeDirs.push(rel);
+  };
+  for (const rel of files) {
+    const abs = sideAbs(home, true, rel);
+    try {
+      if (lstatSync(abs).isDirectory()) collectReplaceableDirs(abs, rel);
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (code !== "ENOENT" && code !== "ENOTDIR") throw e;
     }
   }
-
-  const files = repoRels.filter((r) => r !== "agent/models.yml").concat(["agent/models.yml"]).sort();
-  if (deny.length > 0) {
-    const deniedJson = JSON.stringify({ files: [], backupDir: null, denied: deny });
-    if (opts.json) console.error(deniedJson);
-    console.error("[config-sync] deploy denied:");
-    for (const d of deny) console.error(`  - ${d}`);
-    process.exit(1);
-  }
-
-  // 3. 可选备份（仅将被覆盖的现存文件）
   let backupDir: string | null = null;
-  if (opts.backup) {
-    const toBackup = files.filter((rel) => existsSync(sideAbs(home, true, rel)));
-    backupDir = toBackup.length > 0 ? createBackupDir(home) : null;
-    if (backupDir) {
-      for (const rel of toBackup) {
-        copyFileSync(sideAbs(home, true, rel), join(backupDir, backupFlatName(rel)));
-      }
+  if (opts.backup && liveRels.length > 0) {
+    backupDir = createBackupDir(home);
+    const used = new Set<string>();
+    for (const rel of liveRels) {
+      let name = backupFlatName(rel);
+      while (used.has(name.toLowerCase())) name = `${name}.${sha256(rel)}`;
+      used.add(name.toLowerCase());
+      copyFileSync(sideAbs(home, true, rel), join(backupDir, name));
     }
   }
   if (opts.json) {
-    console.log(backupDir === null ? JSON.stringify({ files, backupDir: null }) : JSON.stringify({ files, backupDir }));
+    console.log(JSON.stringify({ files, deletes, removeDirs, backupDir }));
   } else {
-    console.log(`deploy guard passed: ${files.length} managed files to deploy`);
-    if (backupDir) console.log(`  已备份将被覆盖的本机文件到: ${backupDir}`);
+    console.log(`deploy guard passed: ${files.length} managed files to deploy, ${deletes.length} to delete`);
+    if (backupDir) console.log(`  已备份将被覆盖或删除的本机文件到: ${backupDir}`);
   }
 }
 
@@ -971,25 +939,19 @@ function opDeployModels(repoRoot: string, home: string, output: string): void {
   const repoAbs = join(repoRoot, "agent", "models.yml");
   if (!existsSync(repoAbs)) fail("deploy denied: repo missing agent/models.yml");
   const repoVal = parseYaml(normalizeText(readFileSync(repoAbs, "utf8")), "agent/models.yml");
-  const repoProviders = isRecord(repoVal.providers) ? repoVal.providers : fail("repo models.yml has no providers mapping");
+  if (!isRecord(repoVal.providers)) fail("repo models.yml has no providers mapping");
 
   const liveAbs = join(home, "agent", "models.yml");
   let liveProviders: Record<string, unknown> = {};
   if (existsSync(liveAbs)) {
-    const liveVal = parseYaml(normalizeText(readFileSync(liveAbs, "utf8")), "live models.yml");
-    if (isRecord(liveVal.providers)) liveProviders = liveVal.providers;
-  }
-
-  // 仓库缺少但本机带真实 key 的 provider：拒绝部署（避免丢凭据）
-  const orphan: string[] = [];
-  for (const [name, p] of Object.entries(liveProviders)) {
-    if (name in repoProviders) continue;
-    if (isRecord(p) && typeof p.apiKey === "string") {
-      const t = p.apiKey.trim();
-      if (t.length > 0 && !PLACEHOLDER_RE.test(t)) orphan.push(name);
+    try {
+      const liveVal: unknown = Bun.YAML.parse(normalizeText(readFileSync(liveAbs, "utf8")));
+      if (isRecord(liveVal) && isRecord(liveVal.providers)) liveProviders = liveVal.providers;
+      else console.error("[config-sync] live models.yml has no readable providers mapping; original is retained in backup");
+    } catch {
+      console.error("[config-sync] live models.yml cannot be parsed; original is retained in backup");
     }
   }
-  if (orphan.length > 0) fail(`deploy denied: providers with real live apiKey but no repo definition; collect their definitions first: ${orphan.join(", ")}`);
 
   const out = structuredClone(repoVal);
   const outProviders = out.providers as Record<string, unknown>;
@@ -997,8 +959,6 @@ function opDeployModels(repoRoot: string, home: string, output: string): void {
   for (const [name, provider] of Object.entries(outProviders)) {
     if (!isRecord(provider)) continue;
     const current = typeof provider.apiKey === "string" ? provider.apiKey.trim() : "";
-    if (current.length === 0) continue;
-    if (!PLACEHOLDER_RE.test(current)) continue; // 仓库已是真实值？不可能过 guard；保守保留
     const liveProvider = liveProviders[name];
     const liveKey = isRecord(liveProvider) && typeof liveProvider.apiKey === "string" ? liveProvider.apiKey.trim() : "";
     let source: "live" | "env" | "placeholder" = "placeholder";
@@ -1006,7 +966,7 @@ function opDeployModels(repoRoot: string, home: string, output: string): void {
     if (liveKey.length > 0 && !PLACEHOLDER_RE.test(liveKey)) {
       key = liveKey;
       source = "live";
-    } else {
+    } else if (PLACEHOLDER_RE.test(current)) {
       const envName = DEPLOY_ENV_BY_PROVIDER[name];
       const envVal = envName ? (process.env[envName] ?? "").trim() : "";
       if (envName && envVal.length > 0) {
@@ -1015,7 +975,7 @@ function opDeployModels(repoRoot: string, home: string, output: string): void {
       }
     }
     if (source === "placeholder") {
-      unfilled.push(`${name} -> ${current}`);
+      if (PLACEHOLDER_RE.test(current)) unfilled.push(`${name} -> ${current}`);
       continue;
     }
     outProviders[name] = { ...provider, apiKey: key };

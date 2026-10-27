@@ -7,7 +7,7 @@
 | 层级 | 路径 | 角色 |
 |------|------|------|
 | 运行层 | `~/.omp`（各机器本地） | omp 实际读取的配置；机器本地项（`shellPath`、`setupVersion`）只存在于这一层 |
-| 仓库层 | 本仓库克隆 | 同步中转，模型定义（`models.yml`）与技能以此为源 |
+| 仓库层 | 本仓库克隆 | 部署依据，受管配置、技能和子代理以此为准 |
 | 真源层 | GitHub `origin/master` | 跨机器共同真源，所有机器从这里 pull |
 
 配置同步全流程可视化：[docs/omp-config-sync.html](docs/omp-config-sync.html)（源文件 `docs/omp-config-sync.workflow.json`）
@@ -16,13 +16,13 @@
 flowchart LR
     GH["GitHub（真源）"] -- "git pull" --> Repo["仓库克隆"]
     Repo -- "setup.ps1（部署）" --> Live["~/.omp（运行层）"]
-    Live -- "sync-from-live.ps1（提升）" --> Repo
-    Repo -- "git push" --> GH
+    Live -. "可选：sync-from-live.ps1（导出）" .-> Repo
+    Repo -. "可选：git push（发布）" .-> GH
 ```
 
-- **拉方向**（部署）：`git pull` → `setup.ps1`。先跑 drift guard（本机基线校验 + 仓库边界校验）再覆盖部署，密钥按 provider 保留本地已填值。
-- **推方向**（提升）：`sync-from-live.ps1 -Check / -Export`。默认只读检查；显式 `-Export` 才把运行层改动写入仓库（不 commit、不 push），真实 apiKey 永不入仓（详见文末「反向同步」，安全细节见 `docs/config-sync.md`）。
-- **分工**：`models.yml` 模型定义与计价、`skills/`、`lsp.json`、`mcp.json`、`agents/`、`config.yml`、`settings.json` 均受管双向流动（导出只增不删；仓库独有内容保留）。
+- **部署方向**：`git pull` → `setup.ps1`。部署以拉取后的本地仓库为准，不因本机受管内容漂移拒绝；仍校验仓库秘密和路径可移植性。同名 provider 的本机真实 API Key 保留，也支持环境变量注入。
+- **本机差异**：仓库没有的本机受管技能和子代理文件会在备份后删除，其他受管配置按仓库覆盖；会话数据库、凭据库和其他非受管数据不删除。
+- **反向导出（可选）**：`sync-from-live.ps1 -Check / -Export` 可用于有意将本机改动提升到仓库，不是部署前提。默认只读，显式 `-Export` 才写仓库（不 commit、不 push），真实 apiKey 不入仓；导出只增不删，仓库独有内容保留。详见 [docs/config-sync.md](docs/config-sync.md)。
 
 ## 分支
 
@@ -45,7 +45,7 @@ omp-config/
 │   └── settings.json         # 持久化设置
 ├── skills/                   # → ~/.omp/agent/skills/
 ├── docs/                     # 配置同步流程可视化（HTML + mermaid 源）
-├── setup.ps1                 # 一键部署脚本（仓库 → ~/.omp，Windows / PowerShell，纯配置无补丁；含 drift guard）
+├── setup.ps1                 # 一键部署脚本（仓库 → ~/.omp，Windows / PowerShell，纯配置无补丁）
 ├── sync-from-live.ps1        # 反向同步脚本（~/.omp → 仓库，默认只读，-Export 才写入；密钥不入仓）
 ├── scripts/
 │   ├── config-sync.ts        # 配置同步 helper（Bun）：check/export/guard-deploy/record-state/deploy-models/set-shell
@@ -78,12 +78,14 @@ cd omp-config
 
 脚本流程（自动执行，无需手动抄步骤）：
 1. 校验 bun 已安装（缺失即退出）
-2. **drift guard**（先于一切写入）：本机基线校验（有基线时新增/修改/删除均拒绝）+ 仓库边界校验（占位符/秘密/可移植路径），拒绝时退出且本机零改动
-3. 安装/升级 omp 到推荐版本（`$RecommendedOmpVersion`，非匹配即重装）、按 guard files 清单逐条复制受管文件（`agent/`、`agents/`、`skills/`）
-4. `deploy-models`：仓库 models.yml 为源，按 provider 保留本机真实 key / 注入环境变量（`OMP_AGENT_PLAN_KEY`/`ZHIPU_API_KEY`），其余保留 `<...>` 占位符并提示手动编辑
+2. 校验仓库边界（占位符/秘密/可移植路径）；不因本机受管内容漂移拒绝部署
+3. 备份本机受影响的受管文件，安装/升级 omp 到推荐版本（`$RecommendedOmpVersion`，非匹配即重装），按仓库复制受管文件；仓库没有的本机受管技能和子代理文件删除前先备份
+4. `deploy-models`：仓库 models.yml 为源，按同名 provider 保留本机真实 key / 注入环境变量（`OMP_AGENT_PLAN_KEY`/`ZHIPU_API_KEY`），其余保留 `<...>` 占位符并提示手动编辑
 5. `set-shell`：探测 pwsh，结构化写回 `shellPath`（无 pwsh 则删除）；探测 gopls/python/codebase-memory-mcp 路径写回 LSP/MCP 配置
-6. 记录本机基线（`config-sync/state.json`）；失败不刷新、保留私有备份
+6. 记录本机基线（`config-sync/state.json`）；失败不刷新、保留私有备份。会话数据库、凭据库和其他非受管数据不删除
 7. 完成（不部署任何 bundle 补丁，omp 保持原样）
+
+配置仓库不包含所有机器依赖和登录状态：语言服务器、MCP 二进制、浏览器及本地 profile 等需按需在每台机器安装或配置；API Key 和 OAuth 等登录凭据也需在对应机器配置。
 
 只读健康检查：`.\doctor.ps1`。它检查 Bun、OMP/bundle 版本、四个配置文件（`config.yml` / `models.yml` / `lsp.json` / `mcp.json`）存在性及 gopls/python/codebase-memory-mcp 是否可用（工具按 PATH 判定），不会自动修复。注意它只查部署健康，不查 live 与仓库之间的内容漂移——漂移用 `.\sync-from-live.ps1 -Check` 查看（无差异退出 0 并明确输出）。
 
@@ -325,11 +327,11 @@ providers:
 
 > **内置 provider 覆盖**：omp 内置 provider（`deepseek`、`anthropic`、`openai` 等）不写 `baseUrl`/`models` 也能在 `providers:` 下建块，只写 `modelOverrides` 即可覆盖内置模型的任意字段（`cost`/`contextWindow` 等）——`cost` 未覆盖的字段逐项回退内置价。
 
-`setup.ps1` 幂等：重复运行覆盖最新配置、保留已填 API Key。部署前先跑 drift guard：本机受管内容相对基线（`~/.omp/config-sync/state.json`）有新增/修改/删除时拒绝部署，防止用仓库版本悄悄回退你在 omp 里改过的配置——此时先 `.\sync-from-live.ps1 -Export` 收集再部署。新机器无基线且无受管配置时直接允许。
+`setup.ps1` 幂等：重复运行以仓库覆盖受管配置，保留同名 provider 已填的本机真实 API Key，并继续进行环境变量注入及机器路径适配。本机漂移不会阻止部署；仓库没有的本机受管技能和子代理文件会先备份再删除，其他非受管数据不删除。仓库的秘密和可移植路径校验仍会执行。
 
 ## 反向同步（`~/.omp` → 仓库，手工发布）
 
-在 omp 里改了角色/配置（`/models` 等）后，把改动提升回仓库，供其他机器部署：
+若希望把 omp 里改过的角色/配置（`/models` 等）发布给其他机器，可选择将改动提升回仓库；正常拉取和部署不需要先检查或导出本机改动：
 
 ```powershell
 .\sync-from-live.ps1           # 只读检查（默认）：列出可导出变化与仓库独有项；退出码 2=有变化
@@ -341,21 +343,19 @@ providers:
 - `config.yml` 剥离 `shellPath` / `setupVersion`（机器本地状态不入仓）
 - 导出是**添加与更新、不传播删除**：仓库独有键/模型/技能保留；需要删除请在仓库显式修改
 - 秘密防线：候选正文命中已知本机秘密/`sk-…`/PEM 形态，或 MCP env 出现 `*TOKEN*` 等实值 → 整批拒绝；错误输出只含文件与字段路径，绝不显示值
-- 首次在无基线的机器上部署：本机所有受管内容须与仓库语义一致（apiKey 真实值 vs 占位符、仓库新增 `reasoning:` 声明属允许的机器差异）才放行
 
 ## 日常同步节奏（推荐）
 
 ```powershell
-# 改配置后（omp 内 /models 等）
-.\sync-from-live.ps1           # 检查 → 审查摘要
-.\sync-from-live.ps1 -Export   # 收集进仓库
+# 从 GitHub 单向部署到本机
+git pull
+.\setup.ps1 -Check            # 可选：仓库边界预检
+.\setup.ps1
+
+# 可选：有意发布本机配置改动时
+.\sync-from-live.ps1          # 检查 → 审查摘要
+.\sync-from-live.ps1 -Export  # 收集进仓库，不自动发布
 git add agent skills; git commit; git pull --rebase; git push
-
-# 到另一台机器
-git pull; .\setup.ps1 -Check; .\setup.ps1   # 拉取 + 预检 + 部署
-
-# 不确定哪边新？
-.\sync-from-live.ps1           # 无差异退出 0；有差异退出 2 并列出
 ```
 
-多台机器同时改过的收敛方式：先 `git pull --rebase`（收别人的），再 `-Export`（推自己的），冲突只在仓库层出现，手工解一次即可。完整安全模型与命令参考：[docs/config-sync.md](docs/config-sync.md)。
+多台机器有需要发布的改动时，在仓库层拉取、审查并解决冲突；不需要发布的本机漂移可直接由部署覆盖。完整安全模型与命令参考：[docs/config-sync.md](docs/config-sync.md)。

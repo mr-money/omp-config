@@ -1,14 +1,14 @@
 ﻿# 行为：安装推荐版本 OMP -> 部署配置 -> (可选)环境变量填 key -> 提示手动编辑
 #
 # 安全流程：
-#   1) drift guard（helper guard-deploy）：本机基线校验 + 仓库边界校验，放在任何安装/复制之前
+#   1) guard-deploy：只读检查仓库边界，列出部署及删除清单；实际部署时备份本机受管文件
 #   2) 安装/升级 omp（Bun）
-#   3) 逐条复制受管文件（guard-deploy --json 的 files 清单；models.yml 由 deploy-models 处理）
+#   3) 删除仓库中不存在的本机受管文件，再逐条复制仓库清单（models.yml 由 deploy-models 处理）
 #   4) deploy-models：仓库为源写 models.yml，保留本机同 provider 真实 key / 注入 OMP_AGENT_PLAN_KEY / ZHIPU_API_KEY
 #   5) set-shell：pwsh 探测，结构化写回 shellPath（无 pwsh 则删除）
 #   6) record-state：部署成功后刷新本机基线（失败不刷新）
 #
-# .\setup.ps1 -Check 只做仓库校验 + guard，不安装、不复制、不备份、不记基线。
+# .\setup.ps1 -Check 只做仓库校验和清单预检，不安装、不复制、不删除、不备份、不记基线。
 
 param(
     [switch]$Check    # 只读部署预检：输出将允许/拒绝及原因
@@ -38,23 +38,33 @@ if (-not $bun) { Write-Fail "未找到 bun。请先安装：irm bun.sh/install.p
 Write-OK "bun $(& bun --version) @ $($bun.Source)"
 if (-not (Test-Path $Helper)) { Write-Fail "缺少 helper: $Helper"; exit 1 }
 
-# 2. 部署守卫（先于一切安装/目录创建/复制）
-Write-Step "部署守卫（本机漂移 + 仓库边界）"
-& bun $Helper guard-deploy --repo $RepoRoot --home $OmpHome --backup --json | Out-Null
+# 2. 部署守卫（先于一切安装/目录创建/复制；预检不备份）
+Write-Step "部署守卫（仓库边界 + 受管文件清单）"
+$guardArgs = @("guard-deploy", "--repo", $RepoRoot, "--home", $OmpHome, "--json")
+if (-not $Check) { $guardArgs += "--backup" }
+$guardOutput = & bun $Helper @guardArgs
 if ($LASTEXITCODE -ne 0) {
-    Write-Fail "部署守卫未通过，本机文件未做任何修改"
-    Write-Host "  处理：先运行 .\sync-from-live.ps1 -Check 审查本机改动，再 .\sync-from-live.ps1 -Export 收集，或还原本机改动"
+    Write-Fail "部署守卫未通过，本机受管文件未做任何修改"
     exit 1
 }
-$guardRaw = ([string](& bun $Helper guard-deploy --repo $RepoRoot --home $OmpHome --json) | ConvertFrom-Json)
+$guardRaw = ([string]$guardOutput | ConvertFrom-Json)
 $files = @($guardRaw.files)
+$deletes = @($guardRaw.deletes)
+$removeDirs = @($guardRaw.removeDirs)
 if ($files.Count -eq 0) { Write-Fail "guard-deploy 返回空 files 清单"; exit 1 }
-Write-OK "守卫通过：受管文件 $($files.Count) 项"
+Write-OK "守卫通过：部署 $($files.Count) 项，删除 $($deletes.Count) 项"
+if ($guardRaw.backupDir) { Write-OK "本机文件备份: $($guardRaw.backupDir)" }
 
 if ($Check) {
     Write-Step "部署预检结果（-Check，未做任何修改）"
     Write-Host "  将部署 $($files.Count) 个受管文件："
     foreach ($f in $files) { Write-Host "    $f" }
+    Write-Host "  将删除 $($deletes.Count) 个仓库中不存在的本机受管文件："
+    foreach ($f in $deletes) { Write-Host "    $f" }
+    if ($removeDirs.Count -gt 0) {
+        Write-Host "  将删除被仓库文件取代的空目录："
+        foreach ($d in $removeDirs) { Write-Host "    $d" }
+    }
     Write-OK "预检通过，可执行 .\setup.ps1"
     exit 0
 }
@@ -83,13 +93,34 @@ New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $AgentDir "skills") | Out-Null
 New-Item -ItemType Directory -Force -Path (Join-Path $AgentDir "agents") | Out-Null
 
+# skills/* 对应 ~/.omp/agent/skills/*；agent/* 对应 ~/.omp/agent/*。
+function Get-LivePath {
+    param([string]$rel)
+    if ($rel.StartsWith("skills/")) {
+        return Join-Path $AgentDir ($rel -replace "/", "\")
+    }
+    return Join-Path $AgentDir ($rel.Substring("agent/".Length) -replace "/", "\")
+}
+
+# 只删除守卫列出的受管常规文件；其他文件和目录（包括数据库）保留。
+Write-Step "删除仓库中不存在的本机受管文件"
+foreach ($rel in $deletes) {
+    [System.IO.File]::Delete((Get-LivePath $rel))
+    Write-OK $rel
+}
+foreach ($rel in $removeDirs) {
+    # 非递归删除：若目录中新出现任何内容则失败，不删除这些内容。
+    [System.IO.Directory]::Delete((Get-LivePath $rel), $false)
+    Write-OK "空目录 $rel"
+}
+
 # 5. 逐条复制受管文件（models.yml 交给 deploy-models；config.yml 先复制，shellPath 之后结构化写回）
 Write-Step "复制受管文件（guard 清单逐条）"
 foreach ($rel in $files) {
     if ($rel -eq "agent/models.yml") { continue }
     $src = Join-Path $RepoRoot ($rel -replace "/", "\")
     if (-not (Test-Path $src)) { Write-Fail "受管文件在仓库中缺失: $rel"; exit 1 }
-    $dst = Join-Path $AgentDir ($rel.Substring("agent/".Length) -replace "/", "\")
+    $dst = Get-LivePath $rel
     $dstDir = Split-Path -Parent $dst
     if (-not (Test-Path $dstDir)) { New-Item -ItemType Directory -Force -Path $dstDir | Out-Null }
     Copy-Item -Force $src $dst
