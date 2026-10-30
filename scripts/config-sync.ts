@@ -40,6 +40,8 @@ export function isRecord(v: unknown): v is Record<string, unknown> {
 
 /** 受管固定文件（仓库相对路径）。 */
 const MANAGED_FILES = ["agent/config.yml", "agent/settings.json", "agent/models.yml", "agent/lsp.json", "agent/mcp.json"];
+/** 以纯文本处理的受管固定文件。 */
+const MANAGED_TEXT_FILES = ["agent/RULES.md"];
 /** 受管目录（递归）。 */
 const MANAGED_DIRS = ["agent/agents", "skills"];
 /** config.yml 剥离的机器本地项。 */
@@ -152,7 +154,7 @@ function isYamlRel(rel: string): boolean {
   return rel.endsWith(".yml") || rel.endsWith(".yaml");
 }
 
-/** 受管固定文件 => 结构化；其余（agents/**、skills/**）=> 文本。 */
+/** 配置文件按结构处理；规则、子代理和技能按文本处理。 */
 function isStructuredRel(rel: string): boolean {
   return MANAGED_FILES.includes(rel);
 }
@@ -226,7 +228,7 @@ function collectManaged(base: string, isLiveSide: boolean, skips: string[]): str
   // agent 是固定文件和本机两个受管目录的共同祖先。
   const agentSafe = inspect(join(base, "agent"), "agent", true);
   if (agentSafe) {
-    for (const f of MANAGED_FILES) if (inspect(sideAbs(base, isLiveSide, f), f, false)) out.push(f);
+    for (const f of [...MANAGED_FILES, ...MANAGED_TEXT_FILES]) if (inspect(sideAbs(base, isLiveSide, f), f, false)) out.push(f);
   }
   for (const d of MANAGED_DIRS) {
     if ((isLiveSide || d.startsWith("agent/")) && !agentSafe) continue;

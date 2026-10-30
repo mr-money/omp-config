@@ -1,13 +1,14 @@
 # 配置同步（scripts/config-sync.ts + sync-from-live.ps1 + setup.ps1）
 
 ## 受管范围
-- 固定文件：`agent/{config.yml,settings.json,models.yml,lsp.json,mcp.json}`（仓库相对路径）
+- 固定文件：`agent/{config.yml,settings.json,models.yml,lsp.json,mcp.json,RULES.md}`（仓库相对路径；`RULES.md` 按文本同步）
 - 目录（递归）：`agent/agents/**`、`skills/**`
 - 本机侧映射：`agent/*` → `~/.omp/agent/*`；`skills/*` → `~/.omp/agent/skills/*`（helper `sideAbs()`）
 
 日常部署是单向的：先从 GitHub 拉取到本地仓库，再运行 `setup.ps1`，以本地仓库的受管内容为准。本机漂移不阻止部署；仓库没有的本机受管技能和子代理文件先备份再删除。会话数据库、凭据库、`.env`、缓存和其他非受管数据不属于删除范围。`sync-from-live.ps1` 仅在有意将本机改动导出到仓库时使用，不是部署前提。
 
 ## 默认浏览器
+- `agent/RULES.md` 将浏览器操作默认交给 Ego Lite 的 `ego-browser` 技能；静态网页读取不受影响。部署时该文件会覆盖本机规则，原文件先备份；有意发布本机修改时使用 `sync-from-live.ps1 -Export`。
 - `skills/ego-browser/SKILL.md` recommends ego-browser for browser tasks; it is deployed from `skills/**`. Keep `skills.includeSkills` unset so this preference does not filter other skills from OMP discovery.
 - `browser.relay: true` retains OMP's native browser relay as an available capability; it does not automatically route browser tasks to ego-browser.
 - The skill lives at `skills/ego-browser/` and `setup.ps1` deploys it under `~/.omp/agent/skills/ego-browser/`; ego lite itself and its local browser profile/login must be installed on each computer separately.
