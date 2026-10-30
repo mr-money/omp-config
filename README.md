@@ -39,6 +39,7 @@ omp-config/
 ├── agent/                    # → ~/.omp/agent/
 │   ├── agents/               # → ~/.omp/agent/agents/ 子代理定义（含 codebase-memory 三档）
 │   ├── config.yml            # 全局配置（modelRoles, memory/mnemopi, TUI；shellPath 由 setup 探测）
+│   ├── RULES.md              # 全局规则：浏览器操作优先使用 ego-browser
 │   ├── lsp.json              # LSP 服务器（默认 PATH 裸名，setup 探测覆盖）
 │   ├── mcp.json              # MCP 服务器（默认 PATH 裸名，setup 探测覆盖）
 │   ├── models.yml            # 模型提供商 + 人民币计价；apiKey 仓库留占位符，本地手动填（setup 不再交互）
@@ -97,6 +98,7 @@ cd omp-config
 | `~/.omp/agent/lsp.json` | `servers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`gopls` / `python -m pylsp`）；探测到绝对路径则写回 |
 | `~/.omp/agent/mcp.json` | `mcpServers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`codebase-memory-mcp`）；探测到绝对路径则写回。二进制需每台机器单独装，见「代码知识图谱 MCP」一节 |
 | `~/.omp/agent/agents/` | — | 直接复制 | 子代理定义（`codebase-memory` 三档）；omp 通过 `task` 的 `agent` 字段调用 |
+| `~/.omp/agent/RULES.md` | — | 直接复制 | 浏览器操作默认使用 Ego Lite 的 `ego-browser` 技能；静态网页读取不受影响。本机已有规则先备份再覆盖 |
 | `~/.omp/agent/config.yml` | `shellPath` | setup 探测写入 | 检测到 pwsh 则自动写入；未检测到则省略（omp 回退到 cmd.exe） |
 | `~/.omp/agent/config.yml` | `statusLine` | 直接复制 | 自定义状态栏：custom 段列表（无 cost 段）、git 只显分支名、path 缩写、模型名带思考档位 |
 | `~/.omp/agent/settings.json` | — | 直接复制 | 不再单独设 shellPath，统一走 config.yml |
@@ -152,7 +154,7 @@ statusLine:
 | `smol` | openai-codex/gpt-6-luna | `high` | 轻量快速任务（回退链见「联网搜索」） |
 | `tiny` | openai-codex/gpt-6-luna | `off` | 轻量后台任务（会话标题等） |
 | `commit` | openai-codex/gpt-6-luna | `off` | 生成 commit message |
-| `task` | openai-codex/gpt-6.1-terra | `xhigh` | 任务子代理（委派多步任务） |
+| `task` | openai-codex/gpt-6.1-terra | `high` | 任务子代理（委派多步任务） |
 | `advisor` | deepseek/deepseek-flash | `low` | 顾问模式 |
 | `vision` | agent-plan/deepseek-v4.1-flash | `low` | 视觉 / 图片理解（见「视觉能力配置」） |
 | `web` | web/tavily | — | 联网搜索主通道（失败回退链见「联网搜索」） |
@@ -340,7 +342,7 @@ providers:
 ```
 
 - **不自动 commit / push**。发布由你手工执行：`git add`（只 stage 受管配置）→ `commit` → `git pull --rebase` → `push`
-- 受管范围：`agent/{config.yml,settings.json,models.yml,lsp.json,mcp.json}`、`agent/agents/**`、`skills/**`；`.env`、数据库、缓存、会话永不读取
+- 受管范围：`agent/{config.yml,settings.json,models.yml,lsp.json,mcp.json,RULES.md}`、`agent/agents/**`、`skills/**`；`.env`、数据库、缓存、会话不作为受管文件导出
 - `config.yml` 剥离 `shellPath` / `setupVersion`（机器本地状态不入仓）
 - 导出是**添加与更新、不传播删除**：仓库独有键/模型/技能保留；需要删除请在仓库显式修改
 - 秘密防线：候选正文命中已知本机秘密/`sk-…`/PEM 形态，或 MCP env 出现 `*TOKEN*` 等实值 → 整批拒绝；错误输出只含文件与字段路径，绝不显示值

@@ -7,7 +7,7 @@ modelRoles:
   tiny: openai-codex/gpt-6-luna:off
   vision: agent-plan/deepseek-v4.1-flash:low
   DeepSeek: deepseek/deepseek-flash:high
-  task: openai-codex/gpt-6.1-terra:xhigh
+  task: openai-codex/gpt-6.1-terra:high
   agent-plan: agent-plan/glm-5-3-flash
   web: web/tavily
   memory: deepseek/deepseek-flash:low
