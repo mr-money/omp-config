@@ -10,8 +10,10 @@
 ## 默认浏览器
 - `agent/RULES.md` 将浏览器操作默认交给 Ego Lite 的 `ego-browser` 技能；静态网页读取不受影响。部署时该文件会覆盖本机规则，原文件先备份；有意发布本机修改时使用 `sync-from-live.ps1 -Export`。
 - `skills/ego-browser/SKILL.md` recommends ego-browser for browser tasks; it is deployed from `skills/**`. Keep `skills.includeSkills` unset so this preference does not filter other skills from OMP discovery.
+- The tracked skill bundle mirrors the files shipped in the ego lite app (`<app>/Application/<ver>/ego-skills/ego-browser`): `SKILL.md`, `references/`, `scripts/`, `agents/`, `assets/`, `learnings/`. GitHub `citrolabs/ego-lite` main carried skill 2.1.0 while the installed app 0.6.2.5 ships 2.2.0, so the app bundle is the source of truth for the repo copy.
+- OMP scans skills once at startup: after `setup.ps1` the new `ego-browser` skill only resolves in a new OMP session (`Unknown skill` in a running one is expected).
 - `browser.relay: true` retains OMP's native browser relay as an available capability; it does not automatically route browser tasks to ego-browser.
-- The skill lives at `skills/ego-browser/` and `setup.ps1` deploys it under `~/.omp/agent/skills/ego-browser/`; ego lite itself and its local browser profile/login must be installed on each computer separately.
+- The skill lives at `skills/ego-browser/` and `setup.ps1` deploys it under `~/.omp/agent/skills/ego-browser/`; ego lite itself and its local browser profile/login must be installed on each computer separately. The `ego-browser` command comes from the app's version junction (`~/.local/share/ego/active_version_dir` → `<app>/Application/<ver>`), which the app maintains; deploy does not touch it.
 
 ## 命令
 - `.\sync-from-live.ps1` / `-Check`：只读检查（退出 0=无变化，2=有可导出变化，1=错误）

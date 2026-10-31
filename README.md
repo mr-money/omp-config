@@ -44,7 +44,7 @@ omp-config/
 │   ├── mcp.json              # MCP 服务器（默认 PATH 裸名，setup 探测覆盖）
 │   ├── models.yml            # 模型提供商 + 人民币计价；apiKey 仓库留占位符，本地手动填（setup 不再交互）
 │   └── settings.json         # 持久化设置
-├── skills/                   # → ~/.omp/agent/skills/
+├── skills/                   # → ~/.omp/agent/skills/（含 ego-browser 技能全量文件：SKILL.md/references/scripts/agents/assets/learnings）
 ├── docs/                     # 配置同步流程可视化（HTML + mermaid 源）
 ├── setup.ps1                 # 一键部署脚本（仓库 → ~/.omp，Windows / PowerShell，纯配置无补丁）
 ├── sync-from-live.ps1        # 反向同步脚本（~/.omp → 仓库，默认只读，-Export 才写入；密钥不入仓）
@@ -99,6 +99,7 @@ cd omp-config
 | `~/.omp/agent/mcp.json` | `mcpServers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`codebase-memory-mcp`）；探测到绝对路径则写回。二进制需每台机器单独装，见「代码知识图谱 MCP」一节 |
 | `~/.omp/agent/agents/` | — | 直接复制 | 子代理定义（`codebase-memory` 三档）；omp 通过 `task` 的 `agent` 字段调用 |
 | `~/.omp/agent/RULES.md` | — | 直接复制 | 浏览器操作默认使用 Ego Lite 的 `ego-browser` 技能；静态网页读取不受影响。本机已有规则先备份再覆盖 |
+| `~/.omp/agent/skills/` | — | 递归复制 | 技能目录，`skills/<name>/SKILL.md` 一目录一技能。`ego-browser` 取自 ego lite 安装包内的 `ego-skills`（当前 0.6.2.5 → 技能 2.2.0）。omp 启动时扫描一次技能，部署后须新开会话才可见 |
 | `~/.omp/agent/config.yml` | `shellPath` | setup 探测写入 | 检测到 pwsh 则自动写入；未检测到则省略（omp 回退到 cmd.exe） |
 | `~/.omp/agent/config.yml` | `statusLine` | 直接复制 | 自定义状态栏：custom 段列表（无 cost 段）、git 只显分支名、path 缩写、模型名带思考档位 |
 | `~/.omp/agent/settings.json` | — | 直接复制 | 不再单独设 shellPath，统一走 config.yml |
