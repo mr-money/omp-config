@@ -1,14 +1,14 @@
 modelRoles:
   plan: openai-codex/gpt-6.1-sol:high
-  slow: openai-codex/gpt-6.1-sol:high
+  slow: commandcode/zai-org/GLM-5.3:high
   advisor: deepseek/deepseek-flash:low
-  commit: openai-codex/gpt-6-luna:off
-  smol: openai-codex/gpt-6-luna:high
-  tiny: openai-codex/gpt-6-luna:off
+  commit: commandcode/deepseek/deepseek-v4.1-flash:off
+  smol: commandcode/deepseek/deepseek-v4.1-flash:low
+  tiny: commandcode/deepseek/deepseek-v4.1-flash:off
   vision: agent-plan/deepseek-v4.1-flash:low
   DeepSeek: deepseek/deepseek-flash:high
-  task: openai-codex/gpt-6.1-terra:high
-  agent-plan: agent-plan/glm-5-3-flash
+  task: commandcode/deepseek/deepseek-v4.1-flash:high
+  agent-plan: agent-plan/deepseek-v4.1-flash:high
   web: web/tavily
   memory: deepseek/deepseek-flash:low
   default: openai-codex/gpt-6.1-terra:medium
@@ -91,12 +91,15 @@ retry:
       - web/hosted
     smol:
       - agent-plan/glm-5-3-flash
-      - zhipu/glm-5.3-flash:low
+      - zhipu/glm-5.3-flash:high
     task:
       - agent-plan/deepseek-v4.1-flash:high
-      - deepseek/deepseek-v4-flash:high
     advisor:
       - deepseek/deepseek-flash:high
+    default:
+      - agent-plan/deepseek-v4.1-flash
+    slow:
+      - commandcode/zai-org/GLM-5.3
 commands:
   enableClaudeUser: true
   enableOpencodeProject: true
@@ -107,3 +110,8 @@ browser:
   relay: true
 tui:
   mouse: false
+codexResets:
+  autoRedeem5h: "yes"
+  autoRedeemWeekly: "yes"
+update:
+  auto: true

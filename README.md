@@ -5,13 +5,25 @@
 ## 包含什么
 
 - **OMP 配置**：模型角色、模型提供商、终端界面、长期记忆和 MCP 设置。
-- **技能与子代理**：包括代码知识图谱工具和 Ego Browser 技能；浏览器操作默认优先使用 Ego Lite。
+- **技能与子代理**：包括代码知识图谱、Ego Browser 和 [Ponytail](https://github.com/DietrichGebert/ponytail)；浏览器操作默认优先使用 Ego Lite。
+- **全局规则**：`agent/RULES.md` 包含浏览器操作及 TaskSpace 释放规则，并整合 [Karpathy 编码准则](https://github.com/multica-ai/andrej-karpathy-skills)；部署后适用于 OMP 的各项目会话。
 - **同步工具**：Windows PowerShell 部署、可选的本机配置反向导出，以及只读健康检查。
 - **Ego Browser 启动器**：Windows 版本无关启动器，避免依赖可能过期的版本目录链接；需在每台机器单独安装。
 
 ## 工作方式
 
 GitHub 仓库是跨机器的配置来源：拉取仓库后运行 `setup.ps1` 部署到本机 `~/.omp`；需要发布本机配置修改时，可选择用 `sync-from-live.ps1` 导出到仓库，再自行提交发布。
+
+首次安装需先安装 Git 和 Bun，然后在 PowerShell 中运行：
+
+```powershell
+git clone git@github.com:mr-money/omp-config.git
+cd omp-config
+.\setup.ps1 -Check
+.\setup.ps1
+```
+
+已有仓库可先 `git pull` 再执行预检和部署。要发布本机配置，先运行 `.\sync-from-live.ps1 -Check`，再运行 `.\sync-from-live.ps1 -Export`，审查后提交和推送；导出保留仓库独有技能，不传播删除。
 
 部署前会检查仓库并备份受影响的受管文件；仓库没有的本机受管技能和子代理文件会在备份后删除。浏览器程序、登录状态、凭据及其他机器依赖不随仓库部署。
 
