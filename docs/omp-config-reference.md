@@ -276,8 +276,6 @@ pwsh -File "$d\install.ps1" --skip-config
 - **glm-5.3** — Agent Plan 通道 GLM-5.3（1M 上下文，text-only）
 - `baseUrl: https://ark.cn-beijing.volces.com/api/plan/v3`；仓库中占位脱敏，部署后本地填入
 
-图片生成 Skill（`~/.omp/agent/skills/byted-ark-seedream-skill/`）：豆包 Seedream 生图（Agent Plan 专属版），支持文生图/图生图/连贯组图/联网搜索；API Key 走 `~/.omp/agent/.env` 的 `ARK_SEEDREAM_API_KEY`，图片默认存启动目录 `Seedream-Images/`（已加入 `.gitignore`）。
-
 OpenAI Codex（`openai-codex` provider，omp **内置**）：
 - 角色分配：`default` = `gpt-6.1-terra:medium`，`task` = `gpt-6.1-terra:xhigh`，`smol` = `gpt-6-luna:high`，`tiny` / `commit` = `gpt-6-luna:off`；`plan` / `slow` = `gpt-6.1-sol:high`。
 - **无需 `apiKey`/`baseUrl`**：OAuth 登录（`omp login openai-codex`），凭据存 omp 凭据库（`agent.db`）。
