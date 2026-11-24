@@ -110,7 +110,7 @@ cd omp-config
 | `~/.omp/agent/config.yml` | `defaultThinkingLevel` / `hideThinkingBlock` | 直接复制 | 默认思考档 `auto`；`hideThinkingBlock: true`，隐藏模型返回的思考块 |
 | `~/.omp/agent/config.yml` | `tui.mouse` | 直接复制 | `false`：关闭主会话的鼠标捕获，终端可使用原生鼠标选择和滚轮 |
 | `~/.omp/agent/config.yml` | `images.describeForTextModels` | 直接复制 | `true`：文本模型收到图片时委托 `vision` 角色描述（见「视觉能力配置」） |
-| `~/.omp/agent/config.yml` | `retry.fallbackChains` | 直接复制 | 失败回退链：`web` 主链 25 项；`smol` 和 `task` 各两项，`advisor` 一项（见「联网搜索」） |
+| `~/.omp/agent/config.yml` | `retry.fallbackChains` | 直接复制 | 失败回退链：`web` 主链 23 项；`smol` 和 `task` 各两项，`advisor` 一项（见「联网搜索」） |
 | `~/.omp/agent/config.yml` | `commands` | 直接复制 | 命令来源开关：`enableClaudeUser`（`~/.claude/commands/`）、`enableOpencodeProject`（`.opencode/commands/`） |
 
 ### 验证
@@ -173,9 +173,10 @@ statusLine:
 ### 联网搜索 (`config.yml` → `modelRoles.web` + `retry.fallbackChains.web`)
 
 - **主通道**：`web` 角色 = `web/tavily`。
-- **失败回退链**（`retry.fallbackChains.web`，按序）：`web/perplexity` → `google-gemini-cli/gemini-2.5-flash` → `google-antigravity/gemini-2.5-flash` → `google/gemini-2.5-flash` → `anthropic/claude-haiku-4-5` → `openai-codex/gpt-5.6-luna` → `xai/grok-4.5` → `web/zai` → `web/exa` → `web/tinyfish` → `web/jina` → `web/kagi` → `web/firecrawl` → `web/brave` → `web/kimi` → `web/parallel` → `web/synthetic` → `web/searxng` → `web/startpage` → `web/duckduckgo` → `web/ecosia` → `web/google` → `web/mojeek` → `web/public` → `web/hosted`。
+- **失败回退链**（`retry.fallbackChains.web`，按序）：`web/perplexity` → `web/deepseek` → `anthropic/claude-haiku-4-5` → `openai-codex/gpt-5.6-luna` → `xai/grok-4.5` → `web/zai` → `web/exa` → `web/tinyfish` → `web/jina` → `web/kagi` → `web/firecrawl` → `web/brave` → `web/kimi` → `web/parallel` → `web/synthetic` → `web/searxng` → `web/startpage` → `web/duckduckgo` → `web/ecosia` → `web/google` → `web/mojeek` → `web/public` → `web/hosted`。
 - **角色级回退链**（按序）：`smol` 为 `agent-plan/glm-5-3-flash`、`zhipu/glm-5.3-flash:low`；`task` 为 `agent-plan/deepseek-v4.1-flash:high`、`deepseek/deepseek-v4-flash:high`；`advisor` 为 `deepseek/deepseek-flash:high`。
-- 排序意图：先走托管搜索/通用模型（perplexity、gemini、haiku、grok），再走需要 key 或自建/公共实例的 `web/*` 提供方，最后兜底 `web/hosted`。
+- 排序意图：先走托管搜索（perplexity、deepseek）与自带联网能力的通用模型（haiku、grok），再走需要 key 或自建/公共实例的 `web/*` 提供方，最后兜底 `web/hosted`。
+- Google 模型已从该链移除。`web` 角色只接受 `kind=search` 的搜索模型，或 catalog 中 `webSearch` 非空的 chat 模型；`commandcode/*` 的 chat 模型没有 `webSearch` 标记，放进该链会触发启动警告，DeepSeek 联网搜索改走 `web/deepseek`（DeepSeek 官方搜索 API，`deepseek` provider key）。
 - 旧写法 `providers.webSearchOrder` 已被这套取代（omp bundle 里它只是 `providers.webSearch` 的遗留别名），本配置不再保留该键。
 
 ### 命令来源 (`config.yml` → `commands`)
