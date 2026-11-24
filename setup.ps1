@@ -2,7 +2,7 @@
 #
 # 安全流程：
 #   1) guard-deploy：只读检查仓库边界，列出部署及删除清单；实际部署时备份本机受管文件
-#   2) 安装/升级 omp（Bun）
+#   2) 安装/升级 omp 到最新版（Bun）
 #   3) 删除仓库中不存在的本机受管文件，再逐条复制仓库清单（models.yml 由 deploy-models 处理）
 #   4) deploy-models：仓库为源写 models.yml，保留本机同 provider 真实 key / 注入 OMP_AGENT_PLAN_KEY / ZHIPU_API_KEY
 #   5) set-shell：pwsh 探测，结构化写回 shellPath（无 pwsh 则删除）
@@ -24,7 +24,6 @@ $Helper = Join-Path $RepoRoot "scripts\config-sync.ts"
 $bunInstall = if ($env:BUN_INSTALL) { $env:BUN_INSTALL } else { Join-Path $env:USERPROFILE ".bun" }
 $OmpPkgDir = Join-Path $bunInstall "install\global\node_modules\@oh-my-pi\pi-coding-agent"
 $OmpPkgBundle = Join-Path $OmpPkgDir "dist\cli.js"
-$RecommendedOmpVersion = "18.8.3"
 
 function Write-Step { param($msg) Write-Host "==> $msg" -ForegroundColor Cyan }
 function Write-OK   { param($msg) Write-Host "    OK  $msg" -ForegroundColor Green }
@@ -71,21 +70,24 @@ if ($Check) {
 
 # ---- 以下为实际部署 ----
 
-# 3. 检查并确保 bun 全局 bundle；非推荐版本即重装（幂等：已是该版本则跳过）。
-$needInstall = $true
-if (Test-Path (Join-Path $OmpPkgDir "package.json")) {
-    try { $installed = (Get-Content (Join-Path $OmpPkgDir "package.json") -Raw | ConvertFrom-Json).version; $needInstall = ($installed -ne $RecommendedOmpVersion) } catch { $needInstall = $true }
+# 3. 安装/升级到最新版（bun 幂等：已是最新则快速返回）。
+Write-Step "安装/升级 omp 到最新版"
+# bun 的 bin shim 只有几 KB；更大的 omp.exe 是外部安装器留下的编译版，会阻塞 bun 链接（EEXIST）。
+$OmpShim = Join-Path $bunInstall "bin\omp.exe"
+if ((Test-Path $OmpShim) -and (Get-Item $OmpShim).Length -gt 1MB) {
+    $stale = "$OmpShim.stale"
+    Remove-Item $stale -Force -ErrorAction SilentlyContinue
+    Rename-Item $OmpShim $stale   # 正在运行的镜像删不掉但能改名
+    Write-Warn "已移走外部安装的 omp.exe，避免阻塞 bun 升级"
+    Remove-Item $stale -Force -ErrorAction SilentlyContinue
+    if (Test-Path $stale) { Write-Warn "旧的 omp.exe 仍被占用，退出 omp 后可手动删除 $stale" }
 }
-if ($needInstall) {
-    Write-Step "安装/升级 omp 到 $RecommendedOmpVersion"
-    & bun install -g "@oh-my-pi/pi-coding-agent@$RecommendedOmpVersion"
-    if ($LASTEXITCODE -ne 0) { Write-Fail "omp 安装/升级失败"; exit 1 }
-    if (-not (Test-Path (Join-Path $OmpPkgDir "package.json"))) { Write-Fail "升级后未找到 omp 包: $OmpPkgDir"; exit 1 }
-}
+& bun install -g "@oh-my-pi/pi-coding-agent@latest"
+if ($LASTEXITCODE -ne 0) { Write-Fail "omp 安装/升级失败"; exit 1 }
+if (-not (Test-Path (Join-Path $OmpPkgDir "package.json"))) { Write-Fail "升级后未找到 omp 包: $OmpPkgDir"; exit 1 }
 if (-not (Test-Path $OmpPkgBundle)) { Write-Fail "升级后仍未找到 bundle: $OmpPkgBundle"; exit 1 }
 $actual = (Get-Content (Join-Path $OmpPkgDir "package.json") -Raw | ConvertFrom-Json).version
 if ([version]$actual -lt [version]"18.0.2") { Write-Fail "OMP 版本校验失败: $actual"; exit 1 }
-if ($actual -ne $RecommendedOmpVersion) { Write-Warn "omp 版本 $actual 与推荐版本 $RecommendedOmpVersion 不一致" }
 Write-OK "omp bundle $actual"
 
 # 4. 确保目录存在（仅受管文件的目标目录）

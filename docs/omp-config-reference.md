@@ -66,7 +66,7 @@ omp-config/
 - 已安装 [`bun`](https://bun.sh)：`setup.ps1` 用 `bun install -g` 安装/升级 omp
 - 已安装语言服务器 `gopls`、`pylsp`（未装则保留裸名命令，仅对应语言无补全）
 
-omp 由 `setup.ps1` 自动安装/升级到推荐版本 **18.8.3**（版本不符即重装）；支持自定义 `BUN_INSTALL`（`setup.ps1` / `doctor.ps1` 同一约定）。
+omp 由 `setup.ps1` 自动安装/升级到**最新版**（`bun install -g @oh-my-pi/pi-coding-agent@latest`）；支持自定义 `BUN_INSTALL`（`setup.ps1` / `doctor.ps1` 同一约定）。
 
 ### 步骤（一键部署）
 
@@ -83,7 +83,7 @@ cd omp-config
 脚本流程（自动执行，无需手动抄步骤）：
 1. 校验 bun 已安装（缺失即退出）
 2. 校验仓库边界（占位符/秘密/可移植路径）；不因本机受管内容漂移拒绝部署
-3. 备份本机受影响的受管文件，安装/升级 omp 到推荐版本（`$RecommendedOmpVersion`，非匹配即重装），按仓库复制受管文件；仓库没有的本机受管技能和子代理文件删除前先备份
+3. 备份本机受影响的受管文件，安装/升级 omp 到最新版（`@latest`；外部安装器留下的 `omp.exe` 编译版会先移走，否则 bun 链接报 EEXIST），按仓库复制受管文件；仓库没有的本机受管技能和子代理文件删除前先备份
 4. `deploy-models`：仓库 models.yml 为源，按同名 provider 保留本机真实 key / 注入环境变量（`OMP_AGENT_PLAN_KEY`/`ZHIPU_API_KEY`），其余保留 `<...>` 占位符并提示手动编辑
 5. `set-shell`：探测 pwsh，结构化写回 `shellPath`（无 pwsh 则删除）；探测 gopls/python/codebase-memory-mcp 路径写回 LSP/MCP 配置
 6. 记录本机基线（`config-sync/state.json`）；失败不刷新、保留私有备份。会话数据库、凭据库和其他非受管数据不删除
