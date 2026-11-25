@@ -19,3 +19,8 @@ if(-not $cbm){
     }
 }
 Check "mem-mcp-bin" ($null -ne $cbm) $(if($cbm){$cbm.Source}else{"not found (README: 代码知识图谱 MCP)"})
+# ego-browser 技能由 Ego Lite 自行安装到 ~/.agents/skills，OMP 原生发现；仓库不再托管副本
+$egoSkill = Join-Path $homeDir ".agents\skills\ego-browser\SKILL.md"
+Check "ego-skill" (Test-Path $egoSkill) $(if(Test-Path $egoSkill){"~/.agents/skills/ego-browser"}else{"missing: install/repair Ego Lite (docs/ego-browser-setup.md)"})
+$egoDup = Join-Path $ompHome "agent\skills\ego-browser"
+if(Test-Path $egoDup){ Write-Host ("{0,-12} {1} {2}" -f "ego-dup","WARN","stale repo copy shadows the app skill: run setup.ps1") -ForegroundColor Yellow }

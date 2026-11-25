@@ -675,3 +675,53 @@ describe("deploy-models and set-shell", () => {
     expect(readFileSync(cfg, "utf8")).not.toContain("shellPath");
   });
 });
+
+// ---------- 行为：应用自装技能（ego-browser）不导出，本机旧副本部署时删除 ----------
+
+describe("app-managed skill: ignored by export, removed by deploy", () => {
+  test("check and export ignore live skills/ego-browser", () => {
+    const fx = makeFixture("app-managed-skill");
+    writeRepoBase(fx);
+    writeLiveBase(fx);
+    mkdirSync(join(fx.agentDir, "skills", "ego-browser", "references"), { recursive: true });
+    writeFileSync(join(fx.agentDir, "skills", "ego-browser", "SKILL.md"), "stale copy\n");
+    writeFileSync(join(fx.agentDir, "skills", "ego-browser", "references", "install.md"), "ref\n");
+
+    const check = syncEntry(fx, []);
+    expect(check.code).toBe(0);
+    expect(check.stdout).not.toContain("ego-browser");
+
+    const exp = syncEntry(fx, ["-Export"]);
+    expect(exp.code).toBe(0);
+    expect(existsSync(join(fx.repoDir, "skills", "ego-browser"))).toBe(false);
+    expect(gitStatus(fx).trim()).toBe("");
+  });
+
+  test("setup removes the stale copy, prunes its empty dirs and backs it up", () => {
+    const fx = makeFixture("app-managed-skill-deploy");
+    writeRepoBase(fx);
+    writeLiveBase(fx);
+    mkdirSync(join(fx.agentDir, "skills", "ego-browser", "references"), { recursive: true });
+    writeFileSync(join(fx.agentDir, "skills", "ego-browser", "SKILL.md"), "stale copy\n");
+    writeFileSync(join(fx.agentDir, "skills", "ego-browser", "references", "install.md"), "ref\n");
+
+    // 隔离的已安装包，使真实 setup.ps1 子进程不联网安装。
+    const bunInstall = join(fx.root, "bun-install");
+    const pkg = join(bunInstall, "install", "global", "node_modules", "@oh-my-pi", "pi-coding-agent");
+    mkdirSync(join(pkg, "dist"), { recursive: true });
+    writeFileSync(join(pkg, "package.json"), JSON.stringify({ version: "18.8.3" }));
+    writeFileSync(join(pkg, "dist", "cli.js"), "");
+
+    const r = setupEntry(fx, [], "pwsh", { BUN_INSTALL: bunInstall });
+    expect(r.code).toBe(0);
+    expect(existsSync(join(fx.agentDir, "skills", "ego-browser"))).toBe(false);
+    expect(existsSync(join(fx.agentDir, "skills", "repo-only-skill", "SKILL.md"))).toBe(true);
+    const backupRoot = join(fx.ompDir, "config-sync", "backups");
+    const backupDirs = readdirSync(backupRoot);
+    expect(backupDirs.length).toBe(1);
+    const backups = readdirSync(join(backupRoot, backupDirs[0]!));
+    const egoBackup = backups.find((n) => n === "skills__ego-browser__SKILL.md");
+    expect(egoBackup).toBeDefined();
+    expect(readFileSync(join(backupRoot, backupDirs[0]!, egoBackup!), "utf8")).toBe("stale copy\n");
+  });
+});

@@ -116,6 +116,24 @@ foreach ($rel in $removeDirs) {
     Write-OK "空目录 $rel"
 }
 
+# 删除文件后清理仅因本次删除而变空的受管目录（非空目录与受管根目录保留）。
+$pruneDirs = @{}
+foreach ($rel in $deletes) {
+    $parts = $rel.Split("/")
+    for ($i = $parts.Length - 1; $i -ge 2; $i--) {
+        $dirRel = ($parts[0..($i - 1)] -join "/")
+        if ($dirRel -like "skills/*" -or $dirRel -like "agent/agents/*") { $pruneDirs[$dirRel] = $true }
+    }
+}
+foreach ($dirRel in ($pruneDirs.Keys | Sort-Object { $_.Split("/").Length } -Descending)) {
+    $abs = Get-LivePath $dirRel
+    if (-not (Test-Path -LiteralPath $abs)) { continue }
+    if (@(Get-ChildItem -LiteralPath $abs -Force -ErrorAction SilentlyContinue).Count -eq 0) {
+        [System.IO.Directory]::Delete($abs, $false)
+        Write-OK "空目录 $dirRel"
+    }
+}
+
 # 5. 逐条复制受管文件（models.yml 交给 deploy-models；config.yml 先复制，shellPath 之后结构化写回）
 Write-Step "复制受管文件（guard 清单逐条）"
 foreach ($rel in $files) {

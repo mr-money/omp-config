@@ -46,7 +46,7 @@ omp-config/
 │   ├── mcp.json              # MCP 服务器（默认 PATH 裸名，setup 探测覆盖）
 │   ├── models.yml            # 模型提供商 + 人民币计价；apiKey 仓库留占位符，本地手动填（setup 不再交互）
 │   └── settings.json         # 持久化设置
-├── skills/                   # → ~/.omp/agent/skills/（含 ego-browser 技能全量文件：SKILL.md/references/scripts/agents/assets/learnings）
+├── skills/                   # → ~/.omp/agent/skills/（ego-browser 不在此列：由 Ego Lite 装到 ~/.agents/skills，OMP 原生发现）
 ├── docs/                     # 配置同步流程与 ego-browser 启动器安装说明
 ├── setup.ps1                 # 一键部署脚本（仓库 → ~/.omp，Windows / PowerShell，纯配置无补丁）
 ├── sync-from-live.ps1        # 反向同步脚本（~/.omp → 仓库，默认只读，-Export 才写入；密钥不入仓）
@@ -102,7 +102,7 @@ cd omp-config
 | `~/.omp/agent/mcp.json` | `mcpServers.*.command` | setup 探测覆盖 | 默认 PATH 裸名（`codebase-memory-mcp`）；探测到绝对路径则写回。二进制需每台机器单独装，见「代码知识图谱 MCP」一节 |
 | `~/.omp/agent/agents/` | — | 直接复制 | 子代理定义（`codebase-memory` 三档）；omp 通过 `task` 的 `agent` 字段调用 |
 | `~/.omp/agent/RULES.md` | — | 直接复制 | 浏览器操作默认使用 Ego Lite 的 `ego-browser` 技能；静态网页读取不受影响。本机已有规则先备份再覆盖 |
-| `~/.omp/agent/skills/` | — | 递归复制 | 技能目录，`skills/<name>/SKILL.md` 一目录一技能。`ego-browser` 来自 Ego Lite 安装包内的 `ego-skills`；版本与 app release 独立。omp 启动时扫描一次技能，部署后须新开会话才可见 |
+| `~/.omp/agent/skills/` | — | 递归复制 | 技能目录，`skills/<name>/SKILL.md` 一目录一技能。`ego-browser` 不在此列：Ego Lite 自己装到 `~/.agents/skills/ego-browser`（指向 `~/.local/share/ego/ego-skills`），OMP 用内置 `.agents` 提供方发现；仓库不再复制副本，避免同名技能重复且旧副本抢占裸名。omp 启动时扫描一次技能，部署后须新开会话才可见 |
 | `~/.omp/agent/config.yml` | `shellPath` | setup 探测写入 | 检测到 pwsh 则自动写入；未检测到则省略（omp 回退到 cmd.exe） |
 | `~/.omp/agent/config.yml` | `statusLine` | 直接复制 | 自定义状态栏：custom 段列表（无 cost 段）、git 只显分支名、path 缩写、模型名带思考档位 |
 | `~/.omp/agent/settings.json` | — | 直接复制 | 不再单独设 shellPath，统一走 config.yml |
@@ -345,7 +345,7 @@ providers:
 ```
 
 - **不自动 commit / push**。发布由你手工执行：`git add`（只 stage 受管配置）→ `commit` → `git pull --rebase` → `push`
-- 受管范围：`agent/{config.yml,settings.json,models.yml,lsp.json,mcp.json,RULES.md}`、`agent/agents/**`、`skills/**`；`.env`、数据库、缓存、会话不作为受管文件导出
+- 受管范围：`agent/{config.yml,settings.json,models.yml,lsp.json,mcp.json,RULES.md}`、`agent/agents/**`、`skills/**`；例外 `skills/ego-browser/**` 由 Ego Lite 自行安装，不导出、不比较（本机残留旧副本由 `setup.ps1` 删除）；`.env`、数据库、缓存、会话不作为受管文件导出
 - `config.yml` 剥离 `shellPath` / `setupVersion`（机器本地状态不入仓）
 - 导出是**添加与更新、不传播删除**：仓库独有键/模型/技能保留；需要删除请在仓库显式修改
 - 秘密防线：候选正文命中已知本机秘密/`sk-…`/PEM 形态，或 MCP env 出现 `*TOKEN*` 等实值 → 整批拒绝；错误输出只含文件与字段路径，绝不显示值

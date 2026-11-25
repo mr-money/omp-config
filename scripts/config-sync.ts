@@ -44,6 +44,8 @@ const MANAGED_FILES = ["agent/config.yml", "agent/settings.json", "agent/models.
 const MANAGED_TEXT_FILES = ["agent/RULES.md"];
 /** 受管目录（递归）。 */
 const MANAGED_DIRS = ["agent/agents", "skills"];
+/** 由外部应用自行安装在受管目录内的技能：不导出回仓库；部署仍按仓库清单删除本机旧副本。 */
+const APP_MANAGED_SKILL_RELS = ["skills/ego-browser"];
 /** config.yml 剥离的机器本地项。 */
 const CONFIG_STRIPPED_KEYS = ["shellPath", "setupVersion"];
 /** 排除的目录名。 */
@@ -206,6 +208,10 @@ function walkDir(absDir: string, relPrefix: string, out: string[], skips: string
       out.push(rel);
     }
   }
+}
+
+function isAppManagedSkillRel(rel: string): boolean {
+  return APP_MANAGED_SKILL_RELS.some((p) => rel === p || rel.startsWith(`${p}/`));
 }
 
 /** 收集受管常规文件；任何链接或不可读取的路径记录到 skips，不沿链接遍历。 */
@@ -549,7 +555,8 @@ function buildCandidates(repoRoot: string, home: string, requireLiveConfig: bool
 } {
   const liveSkips: string[] = [];
   const repoSkips: string[] = [];
-  const liveRels = collectManaged(home, true, liveSkips);
+  // 应用自装技能不参与导出/比较；部署方向仍由 guard 按仓库清单删除本机旧副本。
+  const liveRels = collectManaged(home, true, liveSkips).filter((rel) => !isAppManagedSkillRel(rel));
   const repoRels = collectManaged(repoRoot, false, repoSkips);
 
   if (requireLiveConfig && !existsSync(join(home, "agent", "config.yml"))) {

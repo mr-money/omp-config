@@ -2,18 +2,19 @@
 
 ## 受管范围
 - 固定文件：`agent/{config.yml,settings.json,models.yml,lsp.json,mcp.json,RULES.md}`（仓库相对路径；`RULES.md` 按文本同步）
-- 目录（递归）：`agent/agents/**`、`skills/**`
+- 目录（递归）：`agent/agents/**`、`skills/**`（例外：`skills/ego-browser/**` 由 Ego Lite 自行安装，见「默认浏览器」，不导出、不比较；部署时按仓库清单删除本机旧副本）
 - 本机侧映射：`agent/*` → `~/.omp/agent/*`；`skills/*` → `~/.omp/agent/skills/*`（helper `sideAbs()`）
 
 日常部署是单向的：先从 GitHub 拉取到本地仓库，再运行 `setup.ps1`，以本地仓库的受管内容为准。本机漂移不阻止部署；仓库没有的本机受管技能和子代理文件先备份再删除。会话数据库、凭据库、`.env`、缓存和其他非受管数据不属于删除范围。`sync-from-live.ps1` 仅在有意将本机改动导出到仓库时使用，不是部署前提。
 
 ## 默认浏览器
 - `agent/RULES.md` 将浏览器操作默认交给 Ego Lite 的 `ego-browser` 技能；静态网页读取不受影响。部署时该文件会覆盖本机规则，原文件先备份；有意发布本机修改时使用 `sync-from-live.ps1 -Export`。
-- `skills/ego-browser/SKILL.md` recommends ego-browser for browser tasks; it is deployed from `skills/**`. Keep `skills.includeSkills` unset so this preference does not filter other skills from OMP discovery.
-- The tracked skill bundle mirrors the files shipped in the Ego Lite app (`<app>/Application/<ver>/ego-skills/ego-browser`): `SKILL.md`, `references/`, `scripts/`, `agents/`, `assets/`, `learnings/`. The app version and skill version are independent; refresh the tracked bundle from the current installed app when updating the skill.
-- OMP scans skills once at startup: after `setup.ps1` the new `ego-browser` skill only resolves in a new OMP session (`Unknown skill` in a running one is expected).
+- The ego-browser skill is **not** tracked here: Ego Lite installs it at `~/.agents/skills/ego-browser` (symlink to `~/.local/share/ego/ego-skills`), and OMP's built-in `.agents` provider (`agents:user`) discovers it. A repo copy under `skills/**` would be a second skill of the same name; OMP keeps the first admission as bare `ego-browser` and namespaces the loser, so a stale tracked copy silently shadows the app-managed one. Keep only the Ego Lite copy.
+- OMP scans skills once at startup: a new `ego-browser` skill version only takes effect in a new OMP session.
+- **已有机器迁移**：`git pull` 后运行 `setup.ps1`，仓库清单里已没有 `skills/ego-browser`，旧的 `~/.omp/agent/skills/ego-browser/**` 会被备份后删除，空目录一并清理；`sync-from-live.ps1 -Export` 也不会把它写回仓库。先跑 `setup.ps1` 再 `-Export`，避免旧副本被重新发布。
+- **新机器前提**：Ego Lite 未安装（或未完成首次启动）时没有 `~/.agents/skills/ego-browser`，`RULES.md` 指向的技能不可用；`doctor.ps1` 会报 `ego-skill FAIL`。技能路径经 `~/.local/share/ego/ego-skills` → `active_version_dir` 解析，该链接过期时技能同样失效，按 [docs/ego-browser-setup.md](ego-browser-setup.md) 修复。
 - `browser.relay: true` retains OMP's native browser relay as an available capability; it does not automatically route browser tasks to ego-browser.
-- `setup.ps1` deploys the OMP rule and skill, but not the Ego Lite executable or its PATH command. The app's version junction (`~/.local/share/ego/active_version_dir`) can become stale after self-update. Use [docs/ego-browser-setup.md](ego-browser-setup.md) to install the version-independent launcher from `scripts/ego-browser.cmd`; it discovers the newest installed `ego-browser.exe` and avoids depending on that junction.
+- `setup.ps1` deploys the OMP rule, but not the Ego Lite skill, executable, or its PATH command. The app's version junction (`~/.local/share/ego/active_version_dir`) can become stale after self-update. Use [docs/ego-browser-setup.md](ego-browser-setup.md) to install the version-independent launcher from `scripts/ego-browser.cmd`; it discovers the newest installed `ego-browser.exe` and avoids depending on that junction.
 - The launcher targets the default Windows install root `%ProgramFiles%\Citro Labs\ego lite\Application`. Ego Lite itself, browser profile, and login state remain per-machine prerequisites.
 
 ## 命令
